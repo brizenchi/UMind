@@ -1,0 +1,5 @@
+<resources>
+    <string name="app_name">Focus</string>
+    <string name="accessibility_service_summary">专注模式应用阻止服务</string>
+    <string name="accessibility_service_description">在专注时间内阻止选定的应用程序，帮助您保持专注。需要监控窗口状态变化以检测应用启动。</string>
+</resources>
