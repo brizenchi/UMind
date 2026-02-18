@@ -35,6 +35,57 @@ class BlockingEngine @Inject constructor(
 ) {
     companion object {
         private const val TAG = "BlockingEngine"
+
+        /**
+         * 系统关键应用白名单 - 这些应用永远不会被阻止
+         */
+        private val SYSTEM_WHITELIST = setOf(
+            // Android 系统
+            "android",
+            "com.android.systemui",
+
+            // 启动器（Launcher）
+            "com.android.launcher",
+            "com.android.launcher2",
+            "com.android.launcher3",
+            "com.google.android.apps.nexuslauncher", // Pixel Launcher
+            "com.google.android.launcher",
+            "com.sec.android.app.launcher", // Samsung
+            "com.miui.home", // MIUI
+            "com.huawei.android.launcher", // Huawei
+            "com.oppo.launcher", // OPPO
+            "com.vivo.launcher", // Vivo
+
+            // 系统设置
+            "com.android.settings",
+            "com.google.android.settings",
+
+            // 电话和短信
+            "com.android.phone",
+            "com.android.dialer",
+            "com.google.android.dialer",
+            "com.android.mms",
+            "com.google.android.apps.messaging",
+
+            // 系统关键服务
+            "com.android.vending", // Google Play Store
+            "com.google.android.gms", // Google Play Services
+            "com.android.packageinstaller",
+            "com.google.android.packageinstaller",
+
+            // 输入法
+            "com.android.inputmethod.latin",
+            "com.google.android.inputmethod.latin",
+
+            // 相机（可选，但建议保留）
+            "com.android.camera",
+            "com.android.camera2",
+            "com.google.android.GoogleCamera",
+
+            // 时钟和闹钟
+            "com.android.deskclock",
+            "com.google.android.deskclock"
+        )
     }
 
     /**
@@ -51,6 +102,12 @@ class BlockingEngine @Inject constructor(
         Log.d(TAG, "=== getBlockInfo for $packageName ===")
         Log.d(TAG, "openedFromUMind: $openedFromUMind")
 
+        // 首先检查是否是系统白名单应用
+        if (isSystemWhitelistedApp(packageName)) {
+            Log.d(TAG, "System whitelisted app, allowing: $packageName")
+            return BlockInfo(shouldBlock = false)
+        }
+
         // 优先级 1: 检查专注模式
         val focusModeBlockInfo = checkFocusMode(packageName)
         if (focusModeBlockInfo != null) {
@@ -60,6 +117,14 @@ class BlockingEngine @Inject constructor(
 
         // 优先级 2: 检查日常管理
         return checkDailyManagement(packageName, openedFromUMind)
+    }
+
+    /**
+     * 检查是否是系统白名单应用
+     */
+    private fun isSystemWhitelistedApp(packageName: String): Boolean {
+        return packageName in SYSTEM_WHITELIST ||
+               packageName.startsWith("com.example.umind") // UMind 自己
     }
 
     /**

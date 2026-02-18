@@ -68,6 +68,58 @@ class BlockAccessibilityService : AccessibilityService() {
     companion object {
         private const val CHANNEL_ID = "focus_usage_channel"
         private const val CHANNEL_NAME = "应用使用提醒"
+
+        /**
+         * 系统关键应用白名单 - 这些应用永远不会被阻止
+         */
+        private val SYSTEM_WHITELIST = setOf(
+            // Android 系统
+            "android",
+            "com.android.systemui",
+
+            // 启动器（Launcher）
+            "com.android.launcher",
+            "com.android.launcher2",
+            "com.android.launcher3",
+            "com.google.android.apps.nexuslauncher", // Pixel Launcher
+            "com.google.android.launcher",
+            "com.sec.android.app.launcher", // Samsung
+            "com.miui.home", // MIUI
+            "com.huawei.android.launcher", // Huawei
+            "com.oppo.launcher", // OPPO
+            "com.vivo.launcher", // Vivo
+
+            // 系统设置
+            "com.android.settings",
+            "com.google.android.settings",
+
+            // 电话和短信
+            "com.android.phone",
+            "com.android.dialer",
+            "com.google.android.dialer",
+            "com.android.mms",
+            "com.google.android.apps.messaging",
+
+            // 系统关键服务
+            "com.android.vending", // Google Play Store
+            "com.google.android.gms", // Google Play Services
+            "com.android.packageinstaller",
+            "com.google.android.packageinstaller",
+
+            // 输入法
+            "com.android.inputmethod.latin",
+            "com.google.android.inputmethod.latin",
+
+            // 相机（可选，但建议保留）
+            "com.android.camera",
+            "com.android.camera2",
+            "com.google.android.GoogleCamera",
+
+            // 时钟和闹钟
+            "com.android.deskclock",
+            "com.google.android.deskclock"
+        )
+
         fun openAccessibilitySettingsIntent(): Intent = Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)
     }
 
@@ -158,11 +210,9 @@ class BlockAccessibilityService : AccessibilityService() {
             return
         }
 
-        // 忽略系统界面和自己的应用
-        if (packageName == "com.android.systemui" ||
-            packageName == "android" ||
-            packageName == this.packageName) {
-            Log.d("BlockAccessibilityService", "Ignoring system/self package: $packageName")
+        // 忽略系统关键应用和 UMind 自己
+        if (isSystemWhitelistedApp(packageName)) {
+            Log.d("BlockAccessibilityService", "Ignoring whitelisted package: $packageName")
             return
         }
 
@@ -701,7 +751,44 @@ class BlockAccessibilityService : AccessibilityService() {
     override fun onInterrupt() {
         dismissBlockDialog()
     }
-    
+
+    /**
+     * 检查是否是系统白名单应用
+     * 这些应用永远不会被阻止
+     */
+    private fun isSystemWhitelistedApp(packageName: String): Boolean {
+        // 1. 检查是否是 UMind 自己
+        if (packageName == this.packageName) {
+            return true
+        }
+
+        // 2. 检查是否在系统白名单中
+        if (packageName in SYSTEM_WHITELIST) {
+            return true
+        }
+
+        // 3. 检查是否是系统应用（额外保护）
+        try {
+            val appInfo = packageManager.getApplicationInfo(packageName, 0)
+            // 检查是否是系统应用或系统更新应用
+            val isSystemApp = (appInfo.flags and android.content.pm.ApplicationInfo.FLAG_SYSTEM) != 0
+            val isSystemUpdate = (appInfo.flags and android.content.pm.ApplicationInfo.FLAG_UPDATED_SYSTEM_APP) != 0
+
+            // 如果是系统应用且包名包含关键词，也加入白名单
+            if (isSystemApp || isSystemUpdate) {
+                val systemKeywords = listOf("launcher", "settings", "phone", "dialer", "mms", "messaging")
+                if (systemKeywords.any { packageName.contains(it, ignoreCase = true) }) {
+                    Log.d("BlockAccessibilityService", "System app with keyword detected: $packageName")
+                    return true
+                }
+            }
+        } catch (e: Exception) {
+            Log.e("BlockAccessibilityService", "Error checking system app: $packageName", e)
+        }
+
+        return false
+    }
+
     override fun onDestroy() {
         // 清理所有倒计时
         countdownManager.cleanup(serviceScope)
