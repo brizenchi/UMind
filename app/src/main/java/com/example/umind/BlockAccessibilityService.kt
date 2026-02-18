@@ -315,7 +315,13 @@ class BlockAccessibilityService : AccessibilityService() {
         }
 
         // 处理新应用的倒计时和通知（只在真正切换应用时执行）
+        Log.d("BlockAccessibilityService", "=== Processing notifications for $newPackageName ===")
+        Log.d("BlockAccessibilityService", "usageInfo: ${blockInfo.usageInfo}")
         blockInfo.usageInfo?.let { usageInfo ->
+            Log.d("BlockAccessibilityService", "usageLimitMinutes: ${usageInfo.usageLimitMinutes}")
+            Log.d("BlockAccessibilityService", "remainingMinutes: ${usageInfo.remainingMinutes}")
+            Log.d("BlockAccessibilityService", "openCountLimit: ${usageInfo.openCountLimit}")
+            Log.d("BlockAccessibilityService", "remainingCount: ${usageInfo.remainingCount}")
             // 获取应用名称
             val pm = packageManager
             val appName = try {
@@ -348,6 +354,8 @@ class BlockAccessibilityService : AccessibilityService() {
                         scope = serviceScope,
                         onUpdate = { remainingMillis ->
                             // 更新通知显示
+                            Log.d("BlockAccessibilityService", "=== Countdown onUpdate callback ===" )
+                            Log.d("BlockAccessibilityService", "remainingMillis: $remainingMillis, remainingCount: ${usageInfo.remainingCount}")
                             notificationManager.showOrUpdateNotification(
                                 packageName = newPackageName,
                                 appName = appName,
@@ -368,15 +376,21 @@ class BlockAccessibilityService : AccessibilityService() {
                 }
             } ?: run {
                 // 没有时间限制，只显示次数信息
+                Log.d("BlockAccessibilityService", "No time limit, checking count limit")
                 if (usageInfo.remainingCount != null) {
+                    Log.d("BlockAccessibilityService", "Showing count-only notification: remainingCount=${usageInfo.remainingCount}")
                     notificationManager.showOrUpdateNotification(
                         packageName = newPackageName,
                         appName = appName,
                         remainingMillis = null,
                         remainingCount = usageInfo.remainingCount
                     )
+                } else {
+                    Log.d("BlockAccessibilityService", "No count limit either, no notification to show")
                 }
             }
+        } ?: run {
+            Log.d("BlockAccessibilityService", "No usageInfo, no notification to show")
         }
     }
 
@@ -624,11 +638,7 @@ class BlockAccessibilityService : AccessibilityService() {
 
             Log.d("BlockAccessibilityService", "Dialog displayed successfully")
 
-            // 3秒后自动关闭弹窗
-            handler.postDelayed({
-                Log.d("BlockAccessibilityService", "Auto-dismissing dialog")
-                dismissBlockDialog()
-            }, 3000)
+            // 不自动关闭弹窗，需要用户手动点击"我知道了"或点击背景关闭
 
         } catch (e: Exception) {
             Log.e("BlockAccessibilityService", "Error showing block dialog", e)
