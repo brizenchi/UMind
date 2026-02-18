@@ -39,7 +39,14 @@
     <uses-permission android:name="android.permission.PACKAGE_USAGE_STATS"
         tools:ignore="ProtectedPermissions" />
 
+    <!-- 开机自启动权限 -->
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+
+    <!-- 通知权限 -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
     <application
+        android:name="com.example.umind.FocusApplication"
         android:allowBackup="true"
         android:dataExtractionRules="@xml/data_extraction_rules"
         android:fullBackupContent="@xml/backup_rules"
@@ -47,13 +54,13 @@
         android:label="@string/app_name"
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
-        android:theme="@style/Theme.Focus"
+        android:theme="@style/Theme.UMind"
         tools:targetApi="31">
         <activity
-            android:name=".MainActivity"
+            android:name="com.example.umind.MainActivity"
             android:exported="true"
             android:label="@string/app_name"
-            android:theme="@style/Theme.Focus">
+            android:theme="@style/Theme.UMind">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
 
@@ -61,7 +68,7 @@
             </intent-filter>
         </activity>
         <service
-            android:name=".BlockAccessibilityService"
+            android:name="com.example.umind.BlockAccessibilityService"
             android:enabled="true"
             android:exported="false"
             android:label="@string/app_name"
@@ -73,6 +80,21 @@
                 android:name="android.accessibilityservice"
                 android:resource="@xml/accessibility_service_config" />
         </service>
+
+        <!-- 开机广播接收器 -->
+        <receiver
+            android:name="com.example.umind.receiver.BootReceiver"
+            android:enabled="true"
+            android:exported="true"
+            android:permission="android.permission.RECEIVE_BOOT_COMPLETED">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.QUICKBOOT_POWERON" />
+                <!-- MIUI 特殊启动广播 -->
+                <action android:name="com.miui.powerkeeper.action.POWER_CONNECTED" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+        </receiver>
     </application>
 
 </manifest>

@@ -1,0 +1,875 @@
+# Android 专注类应用开发架构最佳实践
+
+## 目录
+1. [架构概览](#架构概览)
+2. [UMind 项目架构实现](#umind-项目架构实现)
+3. [核心技术选型](#核心技术选型)
+4. [应用拦截机制](#应用拦截机制)
+5. [数据持久化策略](#数据持久化策略)
+6. [依赖注入](#依赖注入)
+7. [权限管理](#权限管理)
+8. [性能优化](#性能优化)
+9. [安全与隐私](#安全与隐私)
+10. [用户体验设计](#用户体验设计)
+
+---
+
+## 架构概览
+
+### 推荐架构模式：Clean Architecture + MVVM
+
+```
+┌─────────────────────────────────────────────────┐
+│                 Presentation Layer               │
+│  ┌──────────┐  ┌──────────┐  ┌──────────┐      │
+│  │ Activity │  │ViewModel │  │ Compose  │      │
+│  └────┬─────┘  └────┬─────┘  └────┬─────┘      │
+│       └─────────────┼─────────────┘             │
+└─────────────────────┼──────────────────────────┘
+                      │
+┌─────────────────────┼──────────────────────────┐
+│              ┌──────▼──────┐   Domain Layer     │
+│              │  Use Cases  │                     │
+│              └──────┬──────┘                     │
+│                     │                            │
+│              ┌──────▼──────┐                     │
+│              │ Repository  │ (Interface)         │
+│              └──────┬──────┘                     │
+└─────────────────────┼──────────────────────────┘
+                      │
+┌─────────────────────┼──────────────────────────┐
+│              ┌──────▼──────┐    Data Layer      │
+│              │ Repository  │ (Implementation)    │
+│              │     Impl    │                     │
+│              └──────┬──────┘                     │
+│  ┌───────────┼─────────────┼───────────┐        │
+│  │           │             │           │        │
+│  ▼           ▼             ▼           ▼        │
+│ Room DB    DAO          Entity    Accessibility│
+│                                      Service    │
+└─────────────────────────────────────────────────┘
+```
+
+### 架构原则
+
+1. **依赖规则**：依赖只能从外层指向内层
+   - Presentation → Domain → Data
+   - 内层不依赖外层
+
+2. **关注点分离**：每层有明确的职责
+   - Presentation：UI 和用户交互
+   - Domain：业务逻辑和规则
+   - Data：数据访问和存储
+
+3. **可测试性**：每层可独立测试
+   - Use Cases 可单元测试
+   - Repository 可 Mock
+   - ViewModel 可测试状态变化
+
+---
+
+## UMind 项目架构实现
+
+### 项目结构
+
+```
+app/src/main/java/com/example/focus/
+├── FocusApplication.kt              # Hilt Application
+├── MainActivity.kt                  # 主 Activity
+│
+├── domain/                          # 领域层
+│   ├── model/                       # 领域模型
+│   │   ├── FocusStrategy.kt        # 专注策略模型
+│   │   ├── AppInfo.kt              # 应用信息模型
+│   │   └── Result.kt               # 统一结果封装
+│   │
+│   ├── repository/                  # 仓库接口
+│   │   └── FocusRepository.kt      # 数据操作接口定义
+│   │
+│   └── usecase/                     # 用例（业务逻辑）
+│       ├── GetFocusStrategiesUseCase.kt
+│       ├── SaveFocusStrategyUseCase.kt
+│       ├── DeleteFocusStrategyUseCase.kt
+│       ├── ToggleStrategyActiveUseCase.kt
+│       └── GetInstalledAppsUseCase.kt
+│
+├── data/                            # 数据层
+│   ├── local/                       # 本地数据源
+│   │   ├── entity/                  # Room 实体
+│   │   │   └── FocusStrategyEntity.kt
+│   │   │
+│   │   ├── dao/                     # 数据访问对象
+│   │   │   └── FocusStrategyDao.kt
+│   │   │
+│   │   └── database/                # 数据库
+│   │       └── FocusDatabase.kt
+│   │
+│   └── repository/                  # 仓库实现
+│       └── FocusRepositoryImpl.kt
+│
+├── presentation/                    # 表现层
+│   ├── focus/                       # 专注功能模块
+│   │   ├── FocusListViewModel.kt
+│   │   ├── FocusListScreen.kt
+│   │   ├── FocusEditViewModel.kt
+│   │   └── FocusEditScreen.kt
+│   │
+│   ├── stats/                       # 统计功能模块
+│   │   └── StatsScreen.kt
+│   │
+│   └── settings/                    # 设置功能模块
+│       └── SettingsScreen.kt
+│
+├── di/                              # 依赖注入模块
+│   ├── DatabaseModule.kt            # 数据库依赖
+│   └── RepositoryModule.kt          # 仓库依赖
+│
+├── ui/                              # UI 组件和主题
+│   ├── components/                  # 可复用组件
+│   │   └── TimePickerDialog.kt
+│   │
+│   └── theme/                       # 主题定义
+│       ├── Color.kt
+│       ├── Theme.kt
+│       └── Type.kt
+│
+└── BlockAccessibilityService.kt     # 无障碍服务
+```
+
+### 数据流
+
+```
+用户操作
+    ↓
+UI (Composable)
+    ↓
+ViewModel (状态管理)
+    ↓
+Use Case (业务逻辑)
+    ↓
+Repository Interface (抽象)
+    ↓
+Repository Implementation (实现)
+    ↓
+DAO (数据访问)
+    ↓
+Room Database (持久化)
+```
+
+### 各层详细说明
+
+#### 1. Domain Layer (领域层)
+
+**职责**：定义业务逻辑和规则，不依赖任何框架
+
+**Models (领域模型)**
+```kotlin
+// FocusStrategy.kt - 专注策略领域模型
+data class FocusStrategy(
+    val id: String,
+    val name: String,
+    val startHour: Int,
+    val startMinute: Int,
+    val endHour: Int,
+    val endMinute: Int,
+    val blockedPackages: Set<String>,
+    val isActive: Boolean,
+    val createdAt: Long = System.currentTimeMillis(),
+    val updatedAt: Long = System.currentTimeMillis()
+) {
+    // 业务逻辑方法
+    fun isWithinFocusTime(): Boolean { ... }
+    fun getTimeRangeString(): String { ... }
+}
+```
+
+**Repository Interface (仓库接口)**
+```kotlin
+interface FocusRepository {
+    fun getFocusStrategiesFlow(): Flow<List<FocusStrategy>>
+    suspend fun getFocusStrategies(): Result<List<FocusStrategy>>
+    suspend fun saveFocusStrategy(strategy: FocusStrategy): Result<Unit>
+    suspend fun deleteFocusStrategy(id: String): Result<Unit>
+    suspend fun setStrategyActive(id: String, isActive: Boolean): Result<Unit>
+    suspend fun getInstalledApps(): Result<List<AppInfo>>
+    suspend fun shouldBlockPackage(packageName: String): Boolean
+}
+```
+
+**Use Cases (用例)**
+```kotlin
+// 每个用例封装一个业务操作
+class SaveFocusStrategyUseCase @Inject constructor(
+    private val repository: FocusRepository
+) {
+    suspend operator fun invoke(strategy: FocusStrategy): Result<Unit> {
+        // 业务验证
+        if (strategy.name.isBlank()) {
+            return Result.Error(
+                IllegalArgumentException("Strategy name cannot be empty"),
+                "请输入策略名称"
+            )
+        }
+
+        if (strategy.blockedPackages.isEmpty()) {
+            return Result.Error(
+                IllegalArgumentException("No apps selected"),
+                "请至少选择一个要屏蔽的应用"
+            )
+        }
+
+        return repository.saveFocusStrategy(strategy)
+    }
+}
+```
+
+#### 2. Data Layer (数据层)
+
+**职责**：处理数据的获取、存储和转换
+
+**Room Database**
+```kotlin
+@Database(
+    entities = [FocusStrategyEntity::class],
+    version = 1,
+    exportSchema = false
+)
+abstract class FocusDatabase : RoomDatabase() {
+    abstract fun focusStrategyDao(): FocusStrategyDao
+}
+```
+
+**Entity (数据库实体)**
+```kotlin
+@Entity(tableName = "focus_strategies")
+data class FocusStrategyEntity(
+    @PrimaryKey val id: String,
+    val name: String,
+    val startHour: Int,
+    val startMinute: Int,
+    val endHour: Int,
+    val endMinute: Int,
+    val blockedPackages: String, // JSON 字符串
+    val isActive: Boolean,
+    val createdAt: Long,
+    val updatedAt: Long
+) {
+    // 转换为领域模型
+    fun toDomainModel(): FocusStrategy { ... }
+
+    companion object {
+        // 从领域模型创建
+        fun fromDomainModel(strategy: FocusStrategy): FocusStrategyEntity { ... }
+    }
+}
+```
+
+**DAO (数据访问对象)**
+```kotlin
+@Dao
+interface FocusStrategyDao {
+    @Query("SELECT * FROM focus_strategies ORDER BY createdAt DESC")
+    fun getAllStrategiesFlow(): Flow<List<FocusStrategyEntity>>
+
+    @Query("SELECT * FROM focus_strategies WHERE isActive = 1 LIMIT 1")
+    suspend fun getActiveStrategy(): FocusStrategyEntity?
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertStrategy(strategy: FocusStrategyEntity)
+
+    @Transaction
+    suspend fun setStrategyActiveExclusive(id: String, isActive: Boolean) {
+        if (isActive) {
+            deactivateAllStrategies()
+        }
+        setStrategyActive(id, isActive)
+    }
+}
+```
+
+**Repository Implementation**
+```kotlin
+@Singleton
+class FocusRepositoryImpl @Inject constructor(
+    @ApplicationContext private val context: Context,
+    private val focusStrategyDao: FocusStrategyDao
+) : FocusRepository {
+
+    override fun getFocusStrategiesFlow(): Flow<List<FocusStrategy>> {
+        return focusStrategyDao.getAllStrategiesFlow().map { entities ->
+            entities.map { it.toDomainModel() }
+        }
+    }
+
+    override suspend fun saveFocusStrategy(strategy: FocusStrategy): Result<Unit> {
+        return try {
+            val entity = FocusStrategyEntity.fromDomainModel(
+                strategy.copy(updatedAt = System.currentTimeMillis())
+            )
+            focusStrategyDao.insertStrategy(entity)
+            Result.Success(Unit)
+        } catch (e: Exception) {
+            Result.Error(e, "保存专注策略失败")
+        }
+    }
+}
+```
+
+#### 3. Presentation Layer (表现层)
+
+**职责**：处理 UI 显示和用户交互
+
+**ViewModel**
+```kotlin
+@HiltViewModel
+class FocusListViewModel @Inject constructor(
+    private val getFocusStrategiesUseCase: GetFocusStrategiesUseCase,
+    private val toggleStrategyActiveUseCase: ToggleStrategyActiveUseCase,
+    private val deleteFocusStrategyUseCase: DeleteFocusStrategyUseCase
+) : ViewModel() {
+
+    private val _uiState = MutableStateFlow<FocusListUiState>(FocusListUiState.Loading)
+    val uiState: StateFlow<FocusListUiState> = _uiState.asStateFlow()
+
+    init {
+        loadStrategies()
+    }
+
+    private fun loadStrategies() {
+        viewModelScope.launch {
+            getFocusStrategiesUseCase()
+                .catch { e ->
+                    _uiState.value = FocusListUiState.Error(e.message ?: "加载失败")
+                }
+                .collect { strategies ->
+                    _uiState.value = if (strategies.isEmpty()) {
+                        FocusListUiState.Empty
+                    } else {
+                        FocusListUiState.Success(strategies)
+                    }
+                }
+        }
+    }
+
+    fun toggleStrategyActive(id: String, isActive: Boolean) {
+        viewModelScope.launch {
+            when (val result = toggleStrategyActiveUseCase(id, isActive)) {
+                is Result.Error -> {
+                    _uiState.value = FocusListUiState.Error(result.message ?: "操作失败")
+                }
+                is Result.Success -> {
+                    // Flow 会自动更新
+                }
+                Result.Loading -> {}
+            }
+        }
+    }
+}
+
+// UI 状态定义
+sealed class FocusListUiState {
+    object Loading : FocusListUiState()
+    object Empty : FocusListUiState()
+    data class Success(val strategies: List<FocusStrategy>) : FocusListUiState()
+    data class Error(val message: String) : FocusListUiState()
+}
+```
+
+**Screen (UI)**
+```kotlin
+@Composable
+fun FocusListScreen(
+    navController: NavController,
+    viewModel: FocusListViewModel = hiltViewModel()
+) {
+    val uiState by viewModel.uiState.collectAsState()
+
+    when (val state = uiState) {
+        is FocusListUiState.Loading -> LoadingView()
+        is FocusListUiState.Empty -> EmptyStateView()
+        is FocusListUiState.Success -> StrategyList(state.strategies)
+        is FocusListUiState.Error -> ErrorView(state.message)
+    }
+}
+```
+
+---
+
+## 核心技术选型
+
+### 1. UI 框架
+- **Jetpack Compose**：现代化的声明式 UI 框架
+- **Material Design 3**：最新的设计规范
+- **Navigation Compose**：导航管理
+
+### 2. 架构组件
+- **ViewModel**：管理 UI 状态
+- **LiveData / Flow**：响应式数据流
+- **Lifecycle**：生命周期管理
+
+### 3. 依赖注入
+- **Hilt**：基于 Dagger 的依赖注入框架
+  - 简化配置
+  - 自动生成代码
+  - 与 Android 组件集成
+
+### 4. 数据持久化
+- **Room**：SQLite 数据库封装
+  - 编译时验证 SQL
+  - 支持 Flow 响应式查询
+  - 类型安全
+
+### 5. 异步处理
+- **Kotlin Coroutines**：协程
+  - 简化异步代码
+  - 结构化并发
+  - 取消支持
+
+### 6. 序列化
+- **Kotlinx Serialization**：JSON 序列化
+  - 类型安全
+  - 编译时生成
+  - 性能优秀
+
+---
+
+## 依赖注入
+
+### Hilt 配置
+
+**Application 类**
+```kotlin
+@HiltAndroidApp
+class FocusApplication : Application()
+```
+
+**Activity 注解**
+```kotlin
+@AndroidEntryPoint
+class MainActivity : ComponentActivity() { ... }
+```
+
+**Service 注解**
+```kotlin
+@AndroidEntryPoint
+class BlockAccessibilityService : AccessibilityService() {
+    @Inject
+    lateinit var repository: FocusRepository
+}
+```
+
+**ViewModel 注解**
+```kotlin
+@HiltViewModel
+class FocusListViewModel @Inject constructor(
+    private val getFocusStrategiesUseCase: GetFocusStrategiesUseCase
+) : ViewModel() { ... }
+```
+
+### Hilt 模块
+
+**DatabaseModule**
+```kotlin
+@Module
+@InstallIn(SingletonComponent::class)
+object DatabaseModule {
+
+    @Provides
+    @Singleton
+    fun provideFocusDatabase(
+        @ApplicationContext context: Context
+    ): FocusDatabase {
+        return Room.databaseBuilder(
+            context,
+            FocusDatabase::class.java,
+            FocusDatabase.DATABASE_NAME
+        )
+            .fallbackToDestructiveMigration()
+            .build()
+    }
+
+    @Provides
+    @Singleton
+    fun provideFocusStrategyDao(database: FocusDatabase): FocusStrategyDao {
+        return database.focusStrategyDao()
+    }
+}
+```
+
+**RepositoryModule**
+```kotlin
+@Module
+@InstallIn(SingletonComponent::class)
+abstract class RepositoryModule {
+
+    @Binds
+    @Singleton
+    abstract fun bindFocusRepository(
+        focusRepositoryImpl: FocusRepositoryImpl
+    ): FocusRepository
+}
+```
+
+---
+
+## 应用拦截机制
+
+### 无障碍服务实现
+
+**服务配置**
+```xml
+<!-- AndroidManifest.xml -->
+<service
+    android:name=".BlockAccessibilityService"
+    android:enabled="true"
+    android:exported="false"
+    android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
+    <intent-filter>
+        <action android:name="android.accessibilityservice.AccessibilityService" />
+    </intent-filter>
+    <meta-data
+        android:name="android.accessibilityservice"
+        android:resource="@xml/accessibility_service_config" />
+</service>
+```
+
+**服务实现**
+```kotlin
+@AndroidEntryPoint
+class BlockAccessibilityService : AccessibilityService() {
+
+    @Inject
+    lateinit var repository: FocusRepository
+
+    private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+
+    override fun onAccessibilityEvent(event: AccessibilityEvent?) {
+        if (event?.eventType != AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) {
+            return
+        }
+
+        val packageName = event.packageName?.toString() ?: return
+
+        // 使用协程检查是否应该拦截
+        serviceScope.launch {
+            val shouldBlock = repository.shouldBlockPackage(packageName)
+
+            if (shouldBlock) {
+                showBlockDialog(packageName)
+                performGlobalAction(GLOBAL_ACTION_HOME)
+            }
+        }
+    }
+}
+```
+
+### 拦截策略
+
+1. **时间检查**：判断当前时间是否在专注时段内
+2. **应用检查**：判断应用是否在黑名单中
+3. **策略激活**：只有激活的策略才会生效
+4. **用户提示**：显示友好的提示信息
+
+---
+
+## 数据持久化策略
+
+### Room 数据库设计
+
+**表结构**
+```sql
+CREATE TABLE focus_strategies (
+    id TEXT PRIMARY KEY NOT NULL,
+    name TEXT NOT NULL,
+    startHour INTEGER NOT NULL,
+    startMinute INTEGER NOT NULL,
+    endHour INTEGER NOT NULL,
+    endMinute INTEGER NOT NULL,
+    blockedPackages TEXT NOT NULL,  -- JSON 数组
+    isActive INTEGER NOT NULL,       -- 0 或 1
+    createdAt INTEGER NOT NULL,
+    updatedAt INTEGER NOT NULL
+);
+```
+
+**索引优化**
+```kotlin
+@Entity(
+    tableName = "focus_strategies",
+    indices = [
+        Index(value = ["isActive"]),
+        Index(value = ["createdAt"])
+    ]
+)
+```
+
+### 数据迁移策略
+
+```kotlin
+val MIGRATION_1_2 = object : Migration(1, 2) {
+    override fun migrate(database: SupportSQLiteDatabase) {
+        // 添加新列
+        database.execSQL("ALTER TABLE focus_strategies ADD COLUMN priority INTEGER NOT NULL DEFAULT 0")
+    }
+}
+```
+
+---
+
+## 权限管理
+
+### 必需权限
+
+1. **无障碍服务权限**
+   - 用于监听应用切换
+   - 需要用户手动授权
+
+2. **悬浮窗权限**
+   - 用于显示拦截提示
+   - Android 6.0+ 需要动态申请
+
+3. **使用情况访问权限**
+   - 用于统计应用使用时长
+   - 需要用户手动授权
+
+### 权限检查
+
+```kotlin
+// 检查无障碍服务
+fun isAccessibilityServiceEnabled(context: Context): Boolean {
+    val enabledServices = Settings.Secure.getString(
+        context.contentResolver,
+        Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES
+    )
+    return enabledServices?.contains(context.packageName) == true
+}
+
+// 检查悬浮窗权限
+fun hasOverlayPermission(context: Context): Boolean {
+    return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+        Settings.canDrawOverlays(context)
+    } else {
+        true
+    }
+}
+
+// 检查使用情况访问权限
+fun hasUsageStatsPermission(context: Context): Boolean {
+    val appOps = context.getSystemService(Context.APP_OPS_SERVICE) as AppOpsManager
+    val mode = appOps.checkOpNoThrow(
+        AppOpsManager.OPSTR_GET_USAGE_STATS,
+        Process.myUid(),
+        context.packageName
+    )
+    return mode == AppOpsManager.MODE_ALLOWED
+}
+```
+
+---
+
+## 性能优化
+
+### 1. 数据库优化
+
+- 使用索引��速查询
+- 批量操作使用事务
+- 使用 Flow 避免重复查询
+
+```kotlin
+@Transaction
+suspend fun batchInsert(strategies: List<FocusStrategyEntity>) {
+    strategies.forEach { insertStrategy(it) }
+}
+```
+
+### 2. 内存优化
+
+- 使用 Bitmap 缓存应用图标
+- 及时释放不用的资源
+- 避免内存泄漏
+
+```kotlin
+// 限制图标大小
+val bitmap = drawable?.toBitmap(width = 96, height = 96)
+```
+
+### 3. UI 优化
+
+- 使用 LazyColumn 实现列表虚拟化
+- 避免过度重组
+- 使用 remember 缓存计算结果
+
+```kotlin
+@Composable
+fun StrategyList(strategies: List<FocusStrategy>) {
+    LazyColumn {
+        items(strategies, key = { it.id }) { strategy ->
+            StrategyCard(strategy)
+        }
+    }
+}
+```
+
+---
+
+## 安全与隐私
+
+### 1. 数据安全
+
+- 本地存储，不上传云端
+- 使用 Room 加密（可选）
+- 敏感数据加密存储
+
+### 2. 权限最小化
+
+- 只申请必需的权限
+- 明确说明权限用途
+- 提供权限管理界面
+
+### 3. 隐私保护
+
+- 不收集用户个人信息
+- 不追踪用户行为
+- 遵守 GDPR 和隐私法规
+
+---
+
+## 用户体验设计
+
+### 1. Material Design 3
+
+- 使用 Material 3 组件
+- 支持亮色/暗色主题
+- 动态颜色（Android 12+）
+
+### 2. 响应式设计
+
+- 适配不同屏幕尺寸
+- 支持横屏/竖屏
+- 平板优化
+
+### 3. 交互设计
+
+- 清晰的视觉反馈
+- 流畅的动画过渡
+- 友好的错误提示
+
+### 4. 无障碍支持
+
+- 支持 TalkBack
+- 合理的触摸目标大小
+- 足够的颜色对比度
+
+---
+
+## 测试策略
+
+### 1. 单元测试
+
+```kotlin
+class SaveFocusStrategyUseCaseTest {
+    @Test
+    fun `should return error when name is blank`() = runTest {
+        val useCase = SaveFocusStrategyUseCase(mockRepository)
+        val strategy = FocusStrategy(id = "1", name = "", ...)
+
+        val result = useCase(strategy)
+
+        assertTrue(result is Result.Error)
+    }
+}
+```
+
+### 2. 集成测试
+
+```kotlin
+@HiltAndroidTest
+class FocusRepositoryImplTest {
+    @Test
+    fun `should save and retrieve strategy`() = runTest {
+        val strategy = FocusStrategy(...)
+        repository.saveFocusStrategy(strategy)
+
+        val result = repository.getFocusStrategies()
+
+        assertTrue(result is Result.Success)
+        assertEquals(1, result.data.size)
+    }
+}
+```
+
+### 3. UI 测试
+
+```kotlin
+@Test
+fun testCreateStrategy() {
+    composeTestRule.setContent {
+        FocusEditScreen(navController, viewModel)
+    }
+
+    composeTestRule.onNodeWithText("策略名称").performTextInput("工作专注")
+    composeTestRule.onNodeWithText("保存").performClick()
+
+    // 验证导航
+}
+```
+
+---
+
+## 最佳实践总结
+
+### ✅ 应该做的
+
+1. **使用 Clean Architecture**：清晰的分层架构
+2. **依赖注入**：使用 Hilt 管理依赖
+3. **响应式编程**：使用 Flow 处理数据流
+4. **错误处理**：统一的 Result 类型
+5. **状态管理**：明确的 UI 状态
+6. **测试**：编写单元测试和集成测试
+7. **文档**：保持代码和架构文档更新
+
+### ❌ 不应该做的
+
+1. **不要在 UI 层直接访问数据库**
+2. **不要在 ViewModel 中持有 Context**
+3. **不要在主线程执行耗时操作**
+4. **不要忽略错误处理**
+5. **不要过度设计**：保持简单
+6. **不要硬编码**：使用配置和常量
+7. **不要忽视性能**：定期性能分析
+
+---
+
+## 参考资源
+
+### 官方文档
+- [Android Architecture Guide](https://developer.android.com/topic/architecture)
+- [Jetpack Compose](https://developer.android.com/jetpack/compose)
+- [Hilt](https://developer.android.com/training/dependency-injection/hilt-android)
+- [Room](https://developer.android.com/training/data-storage/room)
+
+### 开源项目
+- [Now in Android](https://github.com/android/nowinandroid)
+- [Tivi](https://github.com/chrisbanes/tivi)
+
+### 书籍
+- Clean Architecture (Robert C. Martin)
+- Android Development with Kotlin
+
+---
+
+## 版本历史
+
+### v1.0.0 (2024-02-10)
+- ✅ 实现 Clean Architecture 架构
+- ✅ 集成 Hilt 依赖注入
+- ✅ 使用 Room 数据库
+- ✅ 实现 MVVM 模式
+- ✅ 使用 Kotlin Flow
+- ✅ 完整的错误处理
+- ✅ Material Design 3 主题
+
+---
+
+**最后更新**: 2024-02-10
+**维护者**: UMind Team

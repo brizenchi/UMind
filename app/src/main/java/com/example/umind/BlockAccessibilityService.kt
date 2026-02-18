@@ -1,0 +1,716 @@
+package com.example.umind
+
+import android.accessibilityservice.AccessibilityService
+import android.accessibilityservice.AccessibilityServiceInfo
+import android.content.Intent
+import android.provider.Settings
+import android.view.accessibility.AccessibilityEvent
+import android.graphics.PixelFormat
+import android.view.View
+import android.view.WindowManager
+import android.widget.LinearLayout
+import android.widget.TextView
+import android.widget.Button
+import android.content.Context
+import android.util.Log
+import android.os.Handler
+import android.os.Looper
+import androidx.core.content.ContextCompat
+import com.example.umind.domain.repository.FocusRepository
+import com.example.umind.data.repository.FocusModeRepository
+import com.example.umind.data.repository.UsageTrackingRepository
+import dagger.hilt.android.AndroidEntryPoint
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
+import javax.inject.Inject
+import android.app.NotificationChannel
+import android.app.NotificationManager
+import android.app.PendingIntent
+import android.os.Build
+import androidx.core.app.NotificationCompat
+
+@AndroidEntryPoint
+class BlockAccessibilityService : AccessibilityService() {
+
+    @Inject
+    lateinit var repository: FocusRepository
+
+    @Inject
+    lateinit var focusModeRepository: FocusModeRepository
+
+    @Inject
+    lateinit var usageTrackingRepository: UsageTrackingRepository
+
+    @Inject
+    lateinit var blockingEngine: com.example.umind.service.BlockingEngine
+
+    @Inject
+    lateinit var blockEventRepository: com.example.umind.data.repository.BlockEventRepository
+
+    @Inject
+    lateinit var countdownManager: com.example.umind.util.UsageCountdownManager
+
+    @Inject
+    lateinit var notificationManager: com.example.umind.util.UsageNotificationManager
+
+    private var windowManager: WindowManager? = null
+    private var blockView: View? = null
+    private val handler = Handler(Looper.getMainLooper())
+    private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+    private var systemNotificationManager: NotificationManager? = null
+
+    // Usage tracking state
+    private var currentForegroundPackage: String? = null
+    private var currentAppStartTime: Long = 0
+
+    companion object {
+        private const val CHANNEL_ID = "focus_usage_channel"
+        private const val CHANNEL_NAME = "应用使用提醒"
+        fun openAccessibilitySettingsIntent(): Intent = Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)
+    }
+
+    override fun onServiceConnected() {
+        super.onServiceConnected()
+        windowManager = getSystemService(Context.WINDOW_SERVICE) as WindowManager
+        systemNotificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+
+        // 测试通知 - 确认通知系统工作正常
+        showTestNotification()
+
+        serviceInfo = serviceInfo.apply {
+            eventTypes = AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED or
+                AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED
+            feedbackType = AccessibilityServiceInfo.FEEDBACK_GENERIC
+            flags = flags or AccessibilityServiceInfo.FLAG_REPORT_VIEW_IDS
+            notificationTimeout = 50
+        }
+
+        Log.d("BlockAccessibilityService", "Service connected and configured")
+    }
+
+    private fun showTestNotification() {
+        try {
+            Log.d("BlockAccessibilityService", "=== Showing test notification ===")
+
+            // 检查通知权限
+            if (!areNotificationsEnabled()) {
+                Log.e("BlockAccessibilityService", "!!! NOTIFICATIONS ARE DISABLED !!!")
+                Log.e("BlockAccessibilityService", "Please enable notifications in app settings")
+                return
+            }
+
+            val notification = NotificationCompat.Builder(this, CHANNEL_ID)
+                .setSmallIcon(android.R.drawable.ic_dialog_info)
+                .setContentTitle("UMind 服务已启动")
+                .setContentText("无障碍服务正在运行，通知系统正常")
+                .setPriority(NotificationCompat.PRIORITY_HIGH)
+                .setAutoCancel(true)
+                .build()
+
+            systemNotificationManager?.notify(999, notification)
+            Log.d("BlockAccessibilityService", "Test notification shown with ID 999")
+        } catch (e: Exception) {
+            Log.e("BlockAccessibilityService", "Error showing test notification", e)
+        }
+    }
+
+    private fun areNotificationsEnabled(): Boolean {
+        val notificationMgr = systemNotificationManager ?: return false
+
+        // 检查通知是否被全局禁用
+        val areEnabled = notificationMgr.areNotificationsEnabled()
+        Log.d("BlockAccessibilityService", "Notifications enabled: $areEnabled")
+
+        // 检查通知渠道是否被禁用 (Android O+)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val channel = notificationMgr.getNotificationChannel(CHANNEL_ID)
+            if (channel != null) {
+                val importance = channel.importance
+                Log.d("BlockAccessibilityService", "Channel importance: $importance (NONE=0, MIN=1, LOW=2, DEFAULT=3, HIGH=4, MAX=5)")
+                if (importance == NotificationManager.IMPORTANCE_NONE) {
+                    Log.e("BlockAccessibilityService", "!!! Notification channel is disabled !!!")
+                    return false
+                }
+            } else {
+                Log.e("BlockAccessibilityService", "!!! Notification channel not found !!!")
+            }
+        }
+
+        return areEnabled
+    }
+
+    override fun onAccessibilityEvent(event: AccessibilityEvent?) {
+        // 添加更详细的日志
+        Log.d("BlockAccessibilityService", "=== Received event ===")
+        Log.d("BlockAccessibilityService", "Event type: ${event?.eventType}")
+        Log.d("BlockAccessibilityService", "Package: ${event?.packageName}")
+        Log.d("BlockAccessibilityService", "Class: ${event?.className}")
+
+        if (event?.eventType != AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) {
+            Log.d("BlockAccessibilityService", "Ignoring event type: ${event?.eventType}")
+            return
+        }
+
+        val packageName = event.packageName?.toString() ?: run {
+            Log.d("BlockAccessibilityService", "No package name in event")
+            return
+        }
+
+        // 忽略系统界面和自己的应用
+        if (packageName == "com.android.systemui" ||
+            packageName == "android" ||
+            packageName == this.packageName) {
+            Log.d("BlockAccessibilityService", "Ignoring system/self package: $packageName")
+            return
+        }
+
+        Log.d("BlockAccessibilityService", "Processing window change to: $packageName")
+
+        // 使用新的 BlockingEngine 检查是否应该被阻止
+        serviceScope.launch {
+            Log.d("BlockAccessibilityService", "=== Checking block info for: $packageName ===")
+
+            // 使用 BlockingEngine 获取阻止信息
+            // openedFromUMind = false，因为从无障碍服务检测到的都是外部打开
+            val blockInfo = blockingEngine.getBlockInfo(
+                packageName = packageName,
+                openedFromUMind = false
+            )
+
+            Log.d("BlockAccessibilityService", "Block info: shouldBlock=${blockInfo.shouldBlock}, reasons=${blockInfo.reasons.size}")
+            blockInfo.usageInfo?.let { info ->
+                Log.d("BlockAccessibilityService", "Usage info: remainingMinutes=${info.remainingMinutes}, remainingCount=${info.remainingCount}")
+            }
+
+            if (blockInfo.shouldBlock) {
+                Log.d("BlockAccessibilityService", "!!! BLOCKING APP: $packageName !!!")
+                Log.d("BlockAccessibilityService", "Block reasons: ${blockInfo.reasons.joinToString { it.toString() }}")
+
+                // 获取应用名称
+                val appName = try {
+                    val pm = packageManager
+                    val appInfo = pm.getApplicationInfo(packageName, 0)
+                    pm.getApplicationLabel(appInfo).toString()
+                } catch (e: Exception) {
+                    packageName
+                }
+
+                // 记录阻止事件
+                blockEventRepository.recordBlockEvent(
+                    packageName = packageName,
+                    appName = appName,
+                    blockInfo = blockInfo
+                )
+
+                // 立即返回桌面，阻止应用打开
+                val homeSuccess = performGlobalAction(GLOBAL_ACTION_HOME)
+                Log.d("BlockAccessibilityService", "Home action result: $homeSuccess")
+
+                // 立即显示弹窗
+                handler.post {
+                    showBlockDialog(packageName, blockInfo)
+                }
+
+                // 更新 currentForegroundPackage 以避免重复处理
+                currentForegroundPackage = packageName
+            } else {
+                Log.d("BlockAccessibilityService", "Not blocking $packageName, tracking app switch")
+                // 只有在不阻止的情况下才记录打开和使用
+                trackAppSwitch(packageName, blockInfo)
+            }
+        }
+    }
+
+    /**
+     * Track app switch and record usage
+     * 处理应用切换时的倒计时暂停/恢复逻辑
+     */
+    private suspend fun trackAppSwitch(
+        newPackageName: String,
+        blockInfo: com.example.umind.domain.model.BlockInfo
+    ) {
+        val now = System.currentTimeMillis()
+
+        // 检查是否是同一个应用
+        val isSameApp = currentForegroundPackage == newPackageName
+
+        // 处理上一个应用的倒计时暂停
+        if (!isSameApp) {
+            currentForegroundPackage?.let { previousPackage ->
+                // 暂停上一个应用的倒计时
+                if (countdownManager.isRunning(previousPackage)) {
+                    Log.d("BlockAccessibilityService", "Pausing countdown for $previousPackage")
+                    countdownManager.pauseCountdown(previousPackage, serviceScope)
+                }
+
+                // 记录上一个应用的使用时长（已在 pauseCountdown 中处理）
+                if (currentAppStartTime > 0) {
+                    val usageDuration = now - currentAppStartTime
+                    Log.d("BlockAccessibilityService", "App switch: $previousPackage used ${usageDuration}ms")
+                }
+            }
+
+            // 记录新应用的打开事件
+            usageTrackingRepository.recordAppOpen(newPackageName)
+            Log.d("BlockAccessibilityService", "Recorded app open for $newPackageName")
+
+            // 更新当前应用状态
+            currentForegroundPackage = newPackageName
+            currentAppStartTime = now
+        } else {
+            Log.d("BlockAccessibilityService", "Same app $newPackageName, skipping countdown restart")
+            return // 同一个应用，不需要重新启动倒计时
+        }
+
+        // 处理新应用的倒计时和通知（只在真正切换应用时执行）
+        blockInfo.usageInfo?.let { usageInfo ->
+            // 获取应用名称
+            val pm = packageManager
+            val appName = try {
+                val appInfo = pm.getApplicationInfo(newPackageName, 0)
+                pm.getApplicationLabel(appInfo).toString()
+            } catch (e: Exception) {
+                newPackageName
+            }
+
+            // 如果有时间限制，启动或恢复倒计时
+            usageInfo.usageLimitMinutes?.let { limitMinutes ->
+                val limitMillis = limitMinutes * 60 * 1000
+                val usedMillis = usageInfo.usedMinutes * 60 * 1000
+
+                // 检查是否已经有暂停的倒计时状态
+                val hasExistingCountdown = countdownManager.hasCountdown(newPackageName)
+
+                if (hasExistingCountdown) {
+                    // 已经有倒计时状态，恢复它
+                    Log.d("BlockAccessibilityService", "Resuming countdown for $newPackageName")
+                    countdownManager.resumeCountdown(newPackageName)
+                } else {
+                    // 没有倒计时状态，创建新的
+                    Log.d("BlockAccessibilityService", "Starting new countdown: limit=${limitMillis}ms, used=${usedMillis}ms")
+
+                    countdownManager.startCountdown(
+                        packageName = newPackageName,
+                        limitMillis = limitMillis,
+                        usedMillis = usedMillis,
+                        scope = serviceScope,
+                        onUpdate = { remainingMillis ->
+                            // 更新通知显示
+                            notificationManager.showOrUpdateNotification(
+                                packageName = newPackageName,
+                                appName = appName,
+                                remainingMillis = remainingMillis,
+                                remainingCount = usageInfo.remainingCount
+                            )
+                        },
+                        onTimeUp = {
+                            // 时间用完，强制退出应用
+                            Log.d("BlockAccessibilityService", "!!! TIME'S UP for $newPackageName !!!")
+                            performGlobalAction(GLOBAL_ACTION_HOME)
+                            handler.post {
+                                showTimeUpDialog(newPackageName, appName)
+                            }
+                            notificationManager.cancelNotification(newPackageName)
+                        }
+                    )
+                }
+            } ?: run {
+                // 没有时间限制，只显示次数信息
+                if (usageInfo.remainingCount != null) {
+                    notificationManager.showOrUpdateNotification(
+                        packageName = newPackageName,
+                        appName = appName,
+                        remainingMillis = null,
+                        remainingCount = usageInfo.remainingCount
+                    )
+                }
+            }
+        }
+    }
+
+    private fun showFocusModeBlockDialog(packageName: String) {
+        try {
+            Log.d("BlockAccessibilityService", "Showing focus mode block dialog for: $packageName")
+
+            // 移除之前的弹窗
+            dismissBlockDialog()
+
+            // 获取应用名称
+            val pm = packageManager
+            val appName = try {
+                val appInfo = pm.getApplicationInfo(packageName, 0)
+                pm.getApplicationLabel(appInfo).toString()
+            } catch (e: Exception) {
+                packageName
+            }
+
+            Log.d("BlockAccessibilityService", "App name: $appName")
+
+            // 创建全屏半透明背景
+            val blockLayout = LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                setBackgroundColor(0xCC000000.toInt()) // 半透明黑色背景
+                gravity = android.view.Gravity.CENTER
+                setPadding(40, 40, 40, 40)
+            }
+
+            // 创建白色卡片容器
+            val cardLayout = LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                setPadding(80, 80, 80, 80)
+                setBackgroundColor(ContextCompat.getColor(this@BlockAccessibilityService, android.R.color.white))
+                elevation = 16f
+            }
+
+            // 标题
+            val titleText = TextView(this).apply {
+                text = "🧘 专注模式"
+                textSize = 24f
+                setTextColor(ContextCompat.getColor(this@BlockAccessibilityService, android.R.color.black))
+                setPadding(0, 0, 0, 30)
+                gravity = android.view.Gravity.CENTER
+                setTypeface(null, android.graphics.Typeface.BOLD)
+            }
+            cardLayout.addView(titleText)
+
+            // 内容
+            val contentText = TextView(this).apply {
+                text = "应用「$appName」不在白名单中\n\n专注模式已开启，只有白名单中的应用可以使用\n\n请保持专注！"
+                textSize = 16f
+                setTextColor(ContextCompat.getColor(this@BlockAccessibilityService, android.R.color.black))
+                setPadding(0, 0, 0, 40)
+                gravity = android.view.Gravity.START
+            }
+            cardLayout.addView(contentText)
+
+            // 确定按钮
+            val okButton = Button(this).apply {
+                text = "我知道了"
+                textSize = 16f
+                isFocusable = false
+                isFocusableInTouchMode = false
+                setOnClickListener {
+                    Log.d("BlockAccessibilityService", "User dismissed focus mode dialog")
+                    dismissBlockDialog()
+                }
+            }
+            cardLayout.addView(okButton)
+
+            // 添加整个布局的点击监听
+            blockLayout.setOnClickListener {
+                Log.d("BlockAccessibilityService", "Background clicked, dismissing dialog")
+                dismissBlockDialog()
+            }
+
+            // 将卡片添加到全屏布局
+            blockLayout.addView(cardLayout)
+
+            // 设置窗口参数
+            val layoutParams = WindowManager.LayoutParams().apply {
+                type = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+                    WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
+                } else {
+                    @Suppress("DEPRECATION")
+                    WindowManager.LayoutParams.TYPE_SYSTEM_ALERT
+                }
+                format = PixelFormat.TRANSLUCENT
+                flags = WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+                        WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
+                        WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
+                        WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON or
+                        WindowManager.LayoutParams.FLAG_WATCH_OUTSIDE_TOUCH
+                width = WindowManager.LayoutParams.MATCH_PARENT
+                height = WindowManager.LayoutParams.MATCH_PARENT
+                gravity = android.view.Gravity.CENTER
+            }
+
+            // 显示弹窗
+            windowManager?.addView(blockLayout, layoutParams)
+            blockView = blockLayout
+
+            Log.d("BlockAccessibilityService", "Focus mode dialog displayed successfully")
+
+            // 3秒后自动关闭弹窗
+            handler.postDelayed({
+                Log.d("BlockAccessibilityService", "Auto-dismissing focus mode dialog")
+                dismissBlockDialog()
+            }, 3000)
+
+        } catch (e: Exception) {
+            Log.e("BlockAccessibilityService", "Error showing focus mode block dialog", e)
+        }
+    }
+
+    private fun showBlockDialog(packageName: String, blockInfo: com.example.umind.domain.model.BlockInfo) {
+        try {
+            Log.d("BlockAccessibilityService", "Showing block dialog for: $packageName")
+
+            // 移除之前的弹窗
+            dismissBlockDialog()
+
+            // 获取应用名称
+            val pm = packageManager
+            val appName = try {
+                val appInfo = pm.getApplicationInfo(packageName, 0)
+                pm.getApplicationLabel(appInfo).toString()
+            } catch (e: Exception) {
+                packageName
+            }
+
+            Log.d("BlockAccessibilityService", "App name: $appName")
+
+            // 创建全屏半透明背景
+            val blockLayout = LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                setBackgroundColor(0xCC000000.toInt()) // 半透明黑色背景
+                gravity = android.view.Gravity.CENTER
+                setPadding(40, 40, 40, 40)
+            }
+
+            // 创建白色卡片容器
+            val cardLayout = LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                setPadding(80, 80, 80, 80)
+                setBackgroundColor(ContextCompat.getColor(this@BlockAccessibilityService, android.R.color.white))
+                elevation = 16f
+            }
+
+            // 标题
+            val titleText = TextView(this).apply {
+                text = "⛔ 专注模式已启用"
+                textSize = 24f
+                setTextColor(ContextCompat.getColor(this@BlockAccessibilityService, android.R.color.black))
+                setPadding(0, 0, 0, 30)
+                gravity = android.view.Gravity.CENTER
+                setTypeface(null, android.graphics.Typeface.BOLD)
+            }
+            cardLayout.addView(titleText)
+
+            // 内容 - 显示阻止原因
+            val reasonsText = blockInfo.reasons.joinToString("\n") { reason ->
+                when (reason) {
+                    is com.example.umind.domain.model.BlockReason.TimeRestriction ->
+                        "• 当前时间段内限制使用"
+                    is com.example.umind.domain.model.BlockReason.UsageLimitExceeded ->
+                        "• 使用时长已达上限\n  限制: ${reason.limitMinutes}分钟\n  已用: ${reason.usedMinutes}分钟"
+                    is com.example.umind.domain.model.BlockReason.OpenCountLimitExceeded ->
+                        "• 打开次数已达上限\n  限制: ${reason.limitCount}次\n  已用: ${reason.usedCount}次"
+                    is com.example.umind.domain.model.BlockReason.FocusModeActive ->
+                        "• 专注模式已开启\n  只有白名单中的应用可以使用"
+                    is com.example.umind.domain.model.BlockReason.ForceThroughApp ->
+                        "• 需要通过 UMind 应用内打开\n  请从 UMind 的受限应用列表中打开"
+                }
+            }
+
+            // 添加调试信息
+            val debugInfo = buildString {
+                blockInfo.usageInfo?.let { info ->
+                    append("\n\n[调试信息]\n")
+                    info.openCountLimit?.let { append("次数限制: $it\n") }
+                    append("当前次数: ${info.openCount}\n")
+                    info.remainingCount?.let { append("剩余次数: $it\n") }
+                }
+            }
+
+            val contentText = TextView(this).apply {
+                text = "应用「$appName」已被阻止\n\n$reasonsText$debugInfo\n\n现在是专注时间，请保持专注！"
+                textSize = 16f
+                setTextColor(ContextCompat.getColor(this@BlockAccessibilityService, android.R.color.black))
+                setPadding(0, 0, 0, 40)
+                gravity = android.view.Gravity.START
+            }
+            cardLayout.addView(contentText)
+
+            // 确定按钮
+            val okButton = Button(this).apply {
+                text = "我知道了"
+                textSize = 16f
+                // 确保按钮可以在不获取焦点的窗口中点击
+                isFocusable = false
+                isFocusableInTouchMode = false
+                setOnClickListener {
+                    Log.d("BlockAccessibilityService", "User dismissed dialog")
+                    dismissBlockDialog()
+                }
+            }
+            cardLayout.addView(okButton)
+
+            // 添加整个布局的点击监听，作为备用关闭方式
+            blockLayout.setOnClickListener {
+                Log.d("BlockAccessibilityService", "Background clicked, dismissing dialog")
+                dismissBlockDialog()
+            }
+
+            // 将卡片添加到全屏布局
+            blockLayout.addView(cardLayout)
+
+            // 设置窗口参数 - 使用全屏覆盖
+            val layoutParams = WindowManager.LayoutParams().apply {
+                type = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+                    WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
+                } else {
+                    @Suppress("DEPRECATION")
+                    WindowManager.LayoutParams.TYPE_SYSTEM_ALERT
+                }
+                format = PixelFormat.TRANSLUCENT
+                // 关键：添加FLAG_NOT_FOCUSABLE，防止弹窗启动focus app
+                // 同时保持FLAG_NOT_TOUCH_MODAL，允许点击弹窗外的区域
+                flags = WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+                        WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
+                        WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
+                        WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON or
+                        WindowManager.LayoutParams.FLAG_WATCH_OUTSIDE_TOUCH
+                width = WindowManager.LayoutParams.MATCH_PARENT
+                height = WindowManager.LayoutParams.MATCH_PARENT
+                // 居中显示
+                gravity = android.view.Gravity.CENTER
+            }
+
+            // 显示弹窗
+            windowManager?.addView(blockLayout, layoutParams)
+            blockView = blockLayout
+
+            Log.d("BlockAccessibilityService", "Dialog displayed successfully")
+
+            // 3秒后自动关闭弹窗
+            handler.postDelayed({
+                Log.d("BlockAccessibilityService", "Auto-dismissing dialog")
+                dismissBlockDialog()
+            }, 3000)
+
+        } catch (e: Exception) {
+            Log.e("BlockAccessibilityService", "Error showing block dialog", e)
+        }
+    }
+
+    private fun showTimeUpDialog(packageName: String, appName: String) {
+        try {
+            Log.d("BlockAccessibilityService", "Showing time up dialog for: $packageName")
+
+            // 移除之前的弹窗
+            dismissBlockDialog()
+
+            // 创建全屏半透明背景
+            val blockLayout = LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                setBackgroundColor(0xCC000000.toInt())
+                gravity = android.view.Gravity.CENTER
+                setPadding(40, 40, 40, 40)
+            }
+
+            // 创建白色卡片容器
+            val cardLayout = LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                setPadding(80, 80, 80, 80)
+                setBackgroundColor(ContextCompat.getColor(this@BlockAccessibilityService, android.R.color.white))
+                elevation = 16f
+            }
+
+            // 标题
+            val titleText = TextView(this).apply {
+                text = "⏰ 使用时间已到"
+                textSize = 24f
+                setTextColor(ContextCompat.getColor(this@BlockAccessibilityService, android.R.color.black))
+                setPadding(0, 0, 0, 30)
+                gravity = android.view.Gravity.CENTER
+                setTypeface(null, android.graphics.Typeface.BOLD)
+            }
+            cardLayout.addView(titleText)
+
+            // 内容
+            val contentText = TextView(this).apply {
+                text = "应用「$appName」的使用时间已用完\n\n请注意休息，保持专注！"
+                textSize = 18f
+                setTextColor(ContextCompat.getColor(this@BlockAccessibilityService, android.R.color.black))
+                setPadding(0, 0, 0, 40)
+                gravity = android.view.Gravity.CENTER
+            }
+            cardLayout.addView(contentText)
+
+            // 确定按钮
+            val okButton = Button(this).apply {
+                text = "我知道了"
+                textSize = 16f
+                isFocusable = false
+                isFocusableInTouchMode = false
+                setOnClickListener {
+                    Log.d("BlockAccessibilityService", "User dismissed time up dialog")
+                    dismissBlockDialog()
+                }
+            }
+            cardLayout.addView(okButton)
+
+            // 添加整个布局的点击监听
+            blockLayout.setOnClickListener {
+                Log.d("BlockAccessibilityService", "Background clicked, dismissing time up dialog")
+                dismissBlockDialog()
+            }
+
+            // 将卡片添加到全屏布局
+            blockLayout.addView(cardLayout)
+
+            // 设置窗口参数
+            val layoutParams = WindowManager.LayoutParams().apply {
+                type = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+                    WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
+                } else {
+                    @Suppress("DEPRECATION")
+                    WindowManager.LayoutParams.TYPE_SYSTEM_ALERT
+                }
+                format = PixelFormat.TRANSLUCENT
+                flags = WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+                        WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
+                        WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
+                        WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON or
+                        WindowManager.LayoutParams.FLAG_WATCH_OUTSIDE_TOUCH
+                width = WindowManager.LayoutParams.MATCH_PARENT
+                height = WindowManager.LayoutParams.MATCH_PARENT
+                gravity = android.view.Gravity.CENTER
+            }
+
+            // 显示弹窗
+            windowManager?.addView(blockLayout, layoutParams)
+            blockView = blockLayout
+
+            Log.d("BlockAccessibilityService", "Time up dialog displayed successfully")
+
+            // 3秒后自动关闭弹窗
+            handler.postDelayed({
+                Log.d("BlockAccessibilityService", "Auto-dismissing time up dialog")
+                dismissBlockDialog()
+            }, 3000)
+
+        } catch (e: Exception) {
+            Log.e("BlockAccessibilityService", "Error showing time up dialog", e)
+        }
+    }
+
+    private fun dismissBlockDialog() {
+        try {
+            blockView?.let { view ->
+                windowManager?.removeView(view)
+                blockView = null
+            }
+        } catch (e: Exception) {
+            Log.e("BlockAccessibilityService", "Error dismissing dialog", e)
+        }
+    }
+
+    override fun onInterrupt() {
+        dismissBlockDialog()
+    }
+    
+    override fun onDestroy() {
+        // 清理所有倒计时
+        countdownManager.cleanup(serviceScope)
+        // 取消所有通知
+        notificationManager.cancelAllNotifications()
+        // 清理对话框
+        dismissBlockDialog()
+        super.onDestroy()
+    }
+}
+
+

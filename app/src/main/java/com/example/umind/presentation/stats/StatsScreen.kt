@@ -1,0 +1,188 @@
+package com.example.umind.presentation.stats
+
+import android.content.Intent
+import android.provider.Settings
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.*
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import androidx.hilt.navigation.compose.hiltViewModel
+import com.example.umind.presentation.stats.components.AppUsageRankingList
+import com.example.umind.presentation.stats.components.StatsOverviewCard
+import com.example.umind.presentation.stats.components.UsageTrendChart
+
+/**
+ * 统计页面
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun StatsScreen(
+    viewModel: StatsViewModel = hiltViewModel()
+) {
+    val context = LocalContext.current
+    val uiState by viewModel.uiState.collectAsState()
+    val selectedDate by viewModel.selectedDate.collectAsState()
+
+    val hasUsageAccess = remember {
+        try {
+            val appOps = context.getSystemService(android.content.Context.APP_OPS_SERVICE) as android.app.AppOpsManager
+            val mode = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
+                appOps.unsafeCheckOpNoThrow(
+                    android.app.AppOpsManager.OPSTR_GET_USAGE_STATS,
+                    android.os.Process.myUid(),
+                    context.packageName
+                )
+            } else {
+                @Suppress("DEPRECATION")
+                appOps.checkOpNoThrow(
+                    android.app.AppOpsManager.OPSTR_GET_USAGE_STATS,
+                    android.os.Process.myUid(),
+                    context.packageName
+                )
+            }
+            mode == android.app.AppOpsManager.MODE_ALLOWED
+        } catch (e: Exception) {
+            false
+        }
+    }
+
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = {
+                    Text(
+                        text = "使用统计",
+                        fontWeight = FontWeight.Bold
+                    )
+                },
+                actions = {
+                    IconButton(onClick = { viewModel.refresh() }) {
+                        Icon(
+                            imageVector = Icons.Default.Refresh,
+                            contentDescription = "刷新"
+                        )
+                    }
+                }
+            )
+        }
+    ) { paddingValues ->
+        if (!hasUsageAccess) {
+            PermissionRequiredContent(
+                modifier = Modifier.padding(paddingValues)
+            )
+        } else {
+            StatsContent(
+                uiState = uiState,
+                modifier = Modifier.padding(paddingValues)
+            )
+        }
+    }
+}
+
+@Composable
+private fun PermissionRequiredContent(
+    modifier: Modifier = Modifier
+) {
+    val context = LocalContext.current
+
+    Column(
+        modifier = modifier
+            .fillMaxSize()
+            .padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(12.dp)
+        ) {
+            Column(
+                modifier = Modifier.padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                Text(
+                    text = "需要权限",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold
+                )
+                Text(
+                    text = "需要开启\"使用情况访问\"权限以统计应用使用时长",
+                    style = MaterialTheme.typography.bodyMedium
+                )
+                Button(
+                    onClick = {
+                        context.startActivity(Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS))
+                    },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("去开启")
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun StatsContent(
+    uiState: StatsUiState,
+    modifier: Modifier = Modifier
+) {
+    when (uiState) {
+        is StatsUiState.Loading -> {
+            Box(
+                modifier = modifier.fillMaxSize(),
+                contentAlignment = Alignment.Center
+            ) {
+                CircularProgressIndicator()
+            }
+        }
+        is StatsUiState.Error -> {
+            Box(
+                modifier = modifier.fillMaxSize(),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    text = "加载失败: ${uiState.message}",
+                    color = MaterialTheme.colorScheme.error
+                )
+            }
+        }
+        is StatsUiState.Success -> {
+            Column(
+                modifier = modifier
+                    .fillMaxSize()
+                    .verticalScroll(rememberScrollState())
+                    .padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                // Overview card
+                StatsOverviewCard(
+                    totalUsageDuration = uiState.dailyStats.totalUsageDurationMillis,
+                    totalOpenCount = uiState.dailyStats.totalOpenCount,
+                    totalBlockCount = uiState.dailyStats.totalBlockCount
+                )
+
+                // App usage ranking
+                AppUsageRankingList(
+                    appUsageStats = uiState.dailyStats.appUsageStats
+                )
+
+                // Weekly trend chart
+                UsageTrendChart(
+                    trends = uiState.weeklyTrend
+                )
+
+                // Bottom spacing
+                Spacer(modifier = Modifier.height(16.dp))
+            }
+        }
+    }
+}
