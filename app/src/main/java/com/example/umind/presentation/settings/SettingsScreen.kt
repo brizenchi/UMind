@@ -20,6 +20,8 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import com.example.umind.BlockAccessibilityService
 import com.example.umind.util.AccessibilityUtil
+import com.example.umind.util.BatteryOptimizationHelper
+import com.example.umind.util.MiuiDeviceHelper
 
 /**
  * 设置页面（我的）
@@ -35,6 +37,8 @@ fun SettingsScreen(
     // 使用 mutableState 以便可以更新
     var hasAccessibilityService by remember { mutableStateOf(false) }
     var hasOverlayPermission by remember { mutableStateOf(false) }
+    var hasBatteryOptimization by remember { mutableStateOf(false) }
+    val isMiuiDevice = remember { MiuiDeviceHelper.isMiuiDevice() }
 
     // 检查权限的函数
     fun checkPermissions() {
@@ -47,6 +51,7 @@ fun SettingsScreen(
         } else {
             true
         }
+        hasBatteryOptimization = BatteryOptimizationHelper.isIgnoringBatteryOptimizations(context)
     }
 
     // 初始检查
@@ -207,6 +212,120 @@ fun SettingsScreen(
                     ) {
                         Text("启用弹窗权限")
                     }
+                }
+            }
+        }
+
+        // 电池优化和MIUI设置卡片
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(12.dp),
+            colors = CardDefaults.cardColors(
+                containerColor = if (isMiuiDevice && !hasBatteryOptimization)
+                    MaterialTheme.colorScheme.errorContainer
+                else
+                    MaterialTheme.colorScheme.surfaceVariant
+            )
+        ) {
+            Column(modifier = Modifier.padding(16.dp)) {
+                Text(
+                    text = if (isMiuiDevice) "🔋 MIUI设备优化设置" else "🔋 电池优化设置",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+
+                // 电池优化状态
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text("电池优化：")
+                    Text(
+                        text = if (hasBatteryOptimization) "✅ 已关闭" else "❌ 未关闭",
+                        color = if (hasBatteryOptimization)
+                            MaterialTheme.colorScheme.primary
+                        else
+                            MaterialTheme.colorScheme.error
+                    )
+                }
+
+                if (!hasBatteryOptimization) {
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        text = "⚠️ 建议关闭电池优化，防止服务被系统杀死",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Button(
+                        onClick = {
+                            BatteryOptimizationHelper.requestIgnoreBatteryOptimizations(context)
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text("关闭电池优化")
+                    }
+                }
+
+                // MIUI特定设置
+                if (isMiuiDevice) {
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Divider()
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    Text(
+                        text = "MIUI设备需要额外设置",
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        text = "为确保应用正常工作，请完成以下设置：",
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    // MIUI设置按钮
+                    OutlinedButton(
+                        onClick = {
+                            MiuiDeviceHelper.openMiuiAutoStartSettings(context)
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text("1. 允许自启动")
+                    }
+
+                    Spacer(modifier = Modifier.height(4.dp))
+
+                    OutlinedButton(
+                        onClick = {
+                            MiuiDeviceHelper.openMiuiBatterySaverSettings(context)
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text("2. 设置省电策略为无限制")
+                    }
+
+                    Spacer(modifier = Modifier.height(4.dp))
+
+                    OutlinedButton(
+                        onClick = {
+                            MiuiDeviceHelper.openMiuiBackgroundPopupSettings(context)
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text("3. 允许后台弹出界面")
+                    }
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    Text(
+                        text = "💡 提示：在最近任务中长按UMind卡片，点击锁定图标防止被清理",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
                 }
             }
         }

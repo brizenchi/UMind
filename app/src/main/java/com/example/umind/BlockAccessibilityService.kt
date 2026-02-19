@@ -68,6 +68,9 @@ class BlockAccessibilityService : AccessibilityService() {
     companion object {
         private const val CHANNEL_ID = "focus_usage_channel"
         private const val CHANNEL_NAME = "应用使用提醒"
+        private const val FOREGROUND_CHANNEL_ID = "accessibility_service_channel"
+        private const val FOREGROUND_CHANNEL_NAME = "无障碍服务"
+        private const val FOREGROUND_NOTIFICATION_ID = 1
 
         /**
          * 系统关键应用白名单 - 这些应用永远不会被阻止
@@ -128,6 +131,12 @@ class BlockAccessibilityService : AccessibilityService() {
         windowManager = getSystemService(Context.WINDOW_SERVICE) as WindowManager
         systemNotificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
 
+        // 创建前台服务通知渠道
+        createForegroundNotificationChannel()
+
+        // 作为前台服务运行，防止被MIUI等系统杀死
+        startForegroundService()
+
         // 测试通知 - 确认通知系统工作正常
         showTestNotification()
 
@@ -139,7 +148,7 @@ class BlockAccessibilityService : AccessibilityService() {
             notificationTimeout = 50
         }
 
-        Log.d("BlockAccessibilityService", "Service connected and configured")
+        Log.d("BlockAccessibilityService", "Service connected and configured as foreground service")
     }
 
     private fun showTestNotification() {
@@ -165,6 +174,68 @@ class BlockAccessibilityService : AccessibilityService() {
             Log.d("BlockAccessibilityService", "Test notification shown with ID 999")
         } catch (e: Exception) {
             Log.e("BlockAccessibilityService", "Error showing test notification", e)
+        }
+    }
+
+    /**
+     * 创建前台服务通知渠道
+     */
+    private fun createForegroundNotificationChannel() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val channel = NotificationChannel(
+                FOREGROUND_CHANNEL_ID,
+                FOREGROUND_CHANNEL_NAME,
+                NotificationManager.IMPORTANCE_LOW // 低重要性，不会发出声音
+            ).apply {
+                description = "保持UMind无障碍服务持续运行"
+                setShowBadge(false)
+                enableLights(false)
+                enableVibration(false)
+            }
+            systemNotificationManager?.createNotificationChannel(channel)
+            Log.d("BlockAccessibilityService", "Foreground notification channel created")
+        }
+    }
+
+    /**
+     * 启动前台服务
+     * 这是防止MIUI等系统杀死服务的关键
+     */
+    private fun startForegroundService() {
+        try {
+            val intent = Intent(this, MainActivity::class.java).apply {
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+            }
+            val pendingIntent = PendingIntent.getActivity(
+                this,
+                0,
+                intent,
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            )
+
+            val notification = NotificationCompat.Builder(this, FOREGROUND_CHANNEL_ID)
+                .setSmallIcon(android.R.drawable.ic_dialog_info)
+                .setContentTitle("UMind 正在运行")
+                .setContentText("应用监控服务已启用，点击打开应用")
+                .setPriority(NotificationCompat.PRIORITY_LOW)
+                .setOngoing(true) // 持续通知，不可滑动删除
+                .setContentIntent(pendingIntent)
+                .setForegroundServiceBehavior(NotificationCompat.FOREGROUND_SERVICE_IMMEDIATE)
+                .build()
+
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                startForeground(
+                    FOREGROUND_NOTIFICATION_ID,
+                    notification,
+                    android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE
+                )
+            } else {
+                startForeground(FOREGROUND_NOTIFICATION_ID, notification)
+            }
+
+            Log.d("BlockAccessibilityService", "Started as foreground service")
+        } catch (e: Exception) {
+            Log.e("BlockAccessibilityService", "Error starting foreground service", e)
         }
     }
 
@@ -210,9 +281,35 @@ class BlockAccessibilityService : AccessibilityService() {
             return
         }
 
+        // 处理应用切换时的倒计时暂停（在检查白名单之前）
+        // 这样即使切换到桌面或系统应用，也会暂停上一个应用的倒计时
+        if (packageName != currentForegroundPackage) {
+            currentForegroundPackage?.let { previousPackage ->
+                // 暂停上一个应用的倒计时
+                if (countdownManager.isRunning(previousPackage)) {
+                    Log.d("BlockAccessibilityService", "Pausing countdown for $previousPackage (switching to $packageName)")
+                    serviceScope.launch {
+                        countdownManager.pauseCountdown(previousPackage, serviceScope)
+                    }
+                }
+
+                // 取消上一个应用的通知
+                notificationManager.cancelNotification(previousPackage)
+
+                // 记录使用时长
+                if (currentAppStartTime > 0) {
+                    val usageDuration = System.currentTimeMillis() - currentAppStartTime
+                    Log.d("BlockAccessibilityService", "App switch: $previousPackage used ${usageDuration}ms")
+                }
+            }
+        }
+
         // 忽略系统关键应用和 UMind 自己
         if (isSystemWhitelistedApp(packageName)) {
             Log.d("BlockAccessibilityService", "Ignoring whitelisted package: $packageName")
+            // 更新当前前台应用为白名单应用（这样下次切换时能正确暂停）
+            currentForegroundPackage = packageName
+            currentAppStartTime = 0
             return
         }
 

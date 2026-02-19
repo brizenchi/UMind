@@ -7,6 +7,6 @@
     android:summary="@string/accessibility_service_summary"
     android:description="@string/accessibility_service_description"
     android:accessibilityFlags="flagReportViewIds"
-    android:settingsActivity="com.example.focus.MainActivity" />
+    android:settingsActivity="com.example.umind.MainActivity" />
 
 

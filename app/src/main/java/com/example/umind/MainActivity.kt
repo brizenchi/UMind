@@ -38,6 +38,8 @@ import com.example.umind.presentation.settings.SettingsScreen
 import com.example.umind.presentation.stats.StatsScreen
 import com.example.umind.ui.theme.FocusTheme
 import com.example.umind.util.AccessibilityUtil
+import com.example.umind.util.BatteryOptimizationHelper
+import com.example.umind.util.MiuiDeviceHelper
 import dagger.hilt.android.AndroidEntryPoint
 import android.util.Log
 
@@ -66,6 +68,15 @@ class MainActivity : ComponentActivity() {
         // 请求通知权限 (Android 13+)
         requestNotificationPermission()
 
+        // 检查并请求电池优化豁免
+        checkBatteryOptimization()
+
+        // 如果是MIUI设备，记录日志提示用户
+        if (MiuiDeviceHelper.isMiuiDevice()) {
+            Log.d("MainActivity", "MIUI device detected: ${MiuiDeviceHelper.getMiuiVersion()}")
+            Log.d("MainActivity", "Please ensure MIUI-specific permissions are granted in Settings")
+        }
+
         setContent {
             FocusTheme {
                 MainScreen()
@@ -89,6 +100,22 @@ class MainActivity : ComponentActivity() {
             }
         } else {
             Log.d("MainActivity", "Android version < 13, notification permission not required")
+        }
+    }
+
+    /**
+     * 检查电池优化状态
+     * 如果未豁免，在首次启动时请求
+     */
+    private fun checkBatteryOptimization() {
+        if (!BatteryOptimizationHelper.isIgnoringBatteryOptimizations(this)) {
+            Log.d("MainActivity", "Battery optimization is enabled, should request exemption")
+            // 注意：这里不立即请求，而是在设置页面提供选项
+            // 因为直接弹出可能会打扰用户体验
+            // 如果需要立即请求，取消下面这行的注释：
+            // BatteryOptimizationHelper.requestIgnoreBatteryOptimizations(this)
+        } else {
+            Log.d("MainActivity", "Battery optimization is already disabled")
         }
     }
 

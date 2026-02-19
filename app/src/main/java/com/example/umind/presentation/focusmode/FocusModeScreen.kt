@@ -182,16 +182,19 @@ fun FocusModeMainCard(
                         Text(
                             text = "已专注",
                             style = MaterialTheme.typography.titleMedium,
-                            color = MaterialTheme.colorScheme.onPrimaryContainer
+                            color = MaterialTheme.colorScheme.onPrimaryContainer,
+                            maxLines = 1
                         )
                         Spacer(modifier = Modifier.height(16.dp))
                         Text(
                             text = String.format("%02d:%02d:%02d", hours, minutes, seconds),
                             style = MaterialTheme.typography.displayLarge.copy(
-                                fontSize = 80.sp,
+                                fontSize = 64.sp,
                                 fontWeight = androidx.compose.ui.text.font.FontWeight.Bold
                             ),
-                            color = MaterialTheme.colorScheme.primary
+                            color = MaterialTheme.colorScheme.primary,
+                            maxLines = 1,
+                            softWrap = false
                         )
                         Spacer(modifier = Modifier.height(8.dp))
                         Text(
@@ -210,18 +213,21 @@ fun FocusModeMainCard(
                             val seconds = ((remainingMillis % 60000) / 1000).toInt()
 
                             Text(
-                                text = "剩余时间",
+                                text = "剩余",
                                 style = MaterialTheme.typography.titleMedium,
-                                color = MaterialTheme.colorScheme.onPrimaryContainer
+                                color = MaterialTheme.colorScheme.onPrimaryContainer,
+                                maxLines = 1
                             )
                             Spacer(modifier = Modifier.height(16.dp))
                             Text(
                                 text = String.format("%02d:%02d:%02d", hours, minutes, seconds),
                                 style = MaterialTheme.typography.displayLarge.copy(
-                                    fontSize = 80.sp,
+                                    fontSize = 64.sp,
                                     fontWeight = androidx.compose.ui.text.font.FontWeight.Bold
                                 ),
-                                color = MaterialTheme.colorScheme.primary
+                                color = MaterialTheme.colorScheme.primary,
+                                maxLines = 1,
+                                softWrap = false
                             )
                             Spacer(modifier = Modifier.height(8.dp))
                             Text(

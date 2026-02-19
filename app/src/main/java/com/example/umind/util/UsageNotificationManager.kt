@@ -158,7 +158,7 @@ class UsageNotificationManager @Inject constructor(
                     minutes > 0 -> "${minutes}分钟${secs}秒"
                     else -> "${secs}秒"
                 }
-                append("⏱️ 剩余时间: $timeText")
+                append("⏱️ 剩余: $timeText")
             }
 
             remainingCount?.let { count ->

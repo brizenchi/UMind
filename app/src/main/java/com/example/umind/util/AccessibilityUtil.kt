@@ -12,9 +12,16 @@ object AccessibilityUtil {
 
     /**
      * 检查无障碍服务是否已启用
+     * 支持检查旧包名（com.example.focus）以兼容包名更改前启用的服务
      */
     fun isAccessibilityServiceEnabled(context: Context, serviceName: String): Boolean {
-        val expectedComponentName = "${context.packageName}/$serviceName"
+        val currentPackageName = context.packageName
+        val expectedComponentName = "$currentPackageName/$serviceName"
+
+        // 兼容旧包名（如果用户在包名更改前启用了服务）
+        val oldPackageName = "com.example.focus"
+        val oldComponentName = "$oldPackageName/$serviceName"
+
         val enabledServicesSetting = Settings.Secure.getString(
             context.contentResolver,
             Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES
@@ -25,7 +32,9 @@ object AccessibilityUtil {
 
         while (colonSplitter.hasNext()) {
             val componentName = colonSplitter.next()
-            if (componentName.equals(expectedComponentName, ignoreCase = true)) {
+            // 检查新包名或旧包名
+            if (componentName.equals(expectedComponentName, ignoreCase = true) ||
+                componentName.equals(oldComponentName, ignoreCase = true)) {
                 return true
             }
         }
