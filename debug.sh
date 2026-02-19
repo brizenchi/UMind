@@ -27,7 +27,7 @@ echo ""
 # 检查无障碍服务状态
 echo "2. 检查无障碍服务状态..."
 ACCESSIBILITY=$(adb shell settings get secure enabled_accessibility_services)
-if echo "$ACCESSIBILITY" | grep -q "com.example.focus"; then
+if echo "$ACCESSIBILITY" | grep -q "com.example.umind"; then
     echo "✅ 无障碍服务已启用"
 else
     echo "❌ 无障碍服务未启用"
@@ -37,7 +37,7 @@ echo ""
 
 # 检查弹窗权限
 echo "3. 检查弹窗权限..."
-OVERLAY=$(adb shell appops get com.example.focus SYSTEM_ALERT_WINDOW 2>/dev/null)
+OVERLAY=$(adb shell appops get com.example.umind SYSTEM_ALERT_WINDOW 2>/dev/null)
 if echo "$OVERLAY" | grep -q "allow"; then
     echo "✅ 弹窗权限已授予"
 else
@@ -48,9 +48,9 @@ echo ""
 
 # 检查应用是否安装
 echo "4. 检查应用安装状态..."
-if adb shell pm list packages | grep -q "com.example.focus"; then
+if adb shell pm list packages | grep -q "com.example.umind"; then
     echo "✅ 应用已安装"
-    VERSION=$(adb shell dumpsys package com.example.focus | grep versionName | head -1)
+    VERSION=$(adb shell dumpsys package com.example.umind | grep versionName | head -1)
     echo "   $VERSION"
 else
     echo "❌ 应用未安装"

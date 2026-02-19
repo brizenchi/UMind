@@ -282,7 +282,7 @@ adb logcat -c
 ./debug_logs.sh
 
 # 3. 在另一个终端，重启无障碍服务
-adb shell settings put secure enabled_accessibility_services com.example.focus/.BlockAccessibilityService
+adb shell settings put secure enabled_accessibility_services com.example.umind/.BlockAccessibilityService
 
 # 4. 打开被限制的应用
 

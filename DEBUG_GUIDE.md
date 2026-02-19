@@ -9,12 +9,12 @@
 # 查看无障碍服务状态
 adb shell settings get secure enabled_accessibility_services
 ```
-应该包含 `com.example.focus/com.example.focus.BlockAccessibilityService`
+应该包含 `com.example.umind/com.example.umind.BlockAccessibilityService`
 
 #### 2. 确认弹窗权限已授予
 ```bash
 # 检查弹窗权限
-adb shell appops get com.example.focus SYSTEM_ALERT_WINDOW
+adb shell appops get com.example.umind SYSTEM_ALERT_WINDOW
 ```
 应该返回 `allow`
 
@@ -105,7 +105,7 @@ adb logcat | grep -E "BlockAccessibilityService|FocusRepository"
 adb install -r app/build/outputs/apk/debug/app-debug.apk
 
 # 2. 启动应用
-adb shell am start -n com.example.focus/.MainActivity
+adb shell am start -n com.example.umind/.MainActivity
 
 # 3. 查看日志
 adb logcat -c  # 清空日志
@@ -115,7 +115,7 @@ adb logcat -s BlockAccessibilityService:D
 adb shell am start -n com.tencent.mm/.ui.LauncherUI
 
 # 5. 检查无障碍服务是否运行
-adb shell dumpsys accessibility | grep -A 10 "com.example.focus"
+adb shell dumpsys accessibility | grep -A 10 "com.example.umind"
 ```
 
 ### 预期行为

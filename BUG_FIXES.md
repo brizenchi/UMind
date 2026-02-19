@@ -69,7 +69,7 @@
    打开应用 -> 设置 -> 调试工具 -> 清除今日记录
 
    # 方法2: 清除应用数据
-   adb shell pm clear com.example.focus
+   adb shell pm clear com.example.umind
    ```
 
 2. **创建新策略**:

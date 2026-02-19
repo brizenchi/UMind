@@ -19,5 +19,5 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "focus"
+rootProject.name = "UMind"
 include(":app")

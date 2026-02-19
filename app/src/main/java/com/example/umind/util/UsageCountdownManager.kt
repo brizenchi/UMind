@@ -27,6 +27,7 @@ class UsageCountdownManager @Inject constructor(
     companion object {
         private const val TAG = "UsageCountdownManager"
         private const val UPDATE_INTERVAL_MS = 1000L // 每秒更新一次
+        private const val MAX_ACTIVE_COUNTDOWNS = 5 // 最多同时运行的倒计时数量
     }
 
     /**
@@ -62,6 +63,18 @@ class UsageCountdownManager @Inject constructor(
     ) {
         Log.d(TAG, "=== startCountdown for $packageName ===")
         Log.d(TAG, "limitMillis: $limitMillis, usedMillis: $usedMillis")
+
+        // Prevent too many active countdowns to avoid performance issues
+        if (countdownStates.size >= MAX_ACTIVE_COUNTDOWNS && !countdownStates.containsKey(packageName)) {
+            Log.w(TAG, "Too many active countdowns (${countdownStates.size}), cleaning up oldest")
+            // Remove the oldest non-running countdown
+            val oldestPaused = countdownStates.entries
+                .filter { !it.value.isRunning }
+                .minByOrNull { it.value.sessionStartTime }
+            oldestPaused?.let {
+                stopCountdown(it.key, scope)
+            }
+        }
 
         // 停止之前的倒计时（如果有）
         stopCountdown(packageName, scope)

@@ -5,7 +5,7 @@
 用户报告无法看到任何通知，包括倒计时通知。通过分析日志发现：
 
 1. **代码执行正常**：日志显示 `Notification.notify()` 被正确调用
-2. **Toast被系统抑制**：日志显示 "Suppressing toast from package com.example.focus by user request"
+2. **Toast被系统抑制**：日志显示 "Suppressing toast from package com.example.umind by user request"
 3. **根本原因**：虽然在 AndroidManifest.xml 中声明了 `POST_NOTIFICATIONS` 权限，但在 Android 13+ (API 33+) 上，这个权限必须在运行时请求
 
 ## 修复内容

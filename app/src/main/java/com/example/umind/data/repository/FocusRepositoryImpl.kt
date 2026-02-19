@@ -447,11 +447,13 @@ class FocusRepositoryImpl @Inject constructor(
                 android.util.Log.d("FocusRepository", "Target apps: ${activeStrategy.targetApps}")
                 when (openCountLimits.type) {
                     com.example.umind.domain.model.LimitType.TOTAL_ALL -> {
-                        val totalCount = activeStrategy.targetApps.sumOf { pkg ->
-                            val count = usageTrackingRepository.getOpenCount(pkg, today)
-                            android.util.Log.d("FocusRepository", "  App $pkg open count: $count")
-                            count
+                        // Optimized: Batch query all apps at once instead of one by one
+                        val allCounts = mutableMapOf<String, Int>()
+                        activeStrategy.targetApps.forEach { pkg ->
+                            allCounts[pkg] = usageTrackingRepository.getOpenCount(pkg, today)
                         }
+                        val totalCount = allCounts.values.sum()
+
                         val limit = openCountLimits.totalCount
                         android.util.Log.d("FocusRepository", "Total open count: $totalCount, limit: $limit")
                         if (limit != null) {

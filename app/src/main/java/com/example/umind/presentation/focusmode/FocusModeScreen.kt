@@ -138,11 +138,13 @@ fun FocusModeMainCard(
     // Timer state that updates every second
     var currentTime by remember { mutableStateOf(System.currentTimeMillis()) }
 
-    LaunchedEffect(Unit) {
-        // Always update time for scheduled ranges display
-        while (true) {
-            currentTime = System.currentTimeMillis()
-            kotlinx.coroutines.delay(1000)
+    // Only update timer when focus mode is active to save resources
+    LaunchedEffect(focusMode.shouldBeActive()) {
+        if (focusMode.shouldBeActive()) {
+            while (true) {
+                currentTime = System.currentTimeMillis()
+                kotlinx.coroutines.delay(1000)
+            }
         }
     }
 

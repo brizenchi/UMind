@@ -65,6 +65,10 @@ class BlockAccessibilityService : AccessibilityService() {
     private var currentForegroundPackage: String? = null
     private var currentAppStartTime: Long = 0
 
+    // Performance optimization: Cache block info to reduce database queries
+    private val blockInfoCache = mutableMapOf<String, Pair<com.example.umind.domain.model.BlockInfo, Long>>()
+    private val BLOCK_INFO_CACHE_MS = 2000L // 2 seconds cache
+
     companion object {
         private const val CHANNEL_ID = "focus_usage_channel"
         private const val CHANNEL_NAME = "应用使用提醒"
@@ -319,12 +323,28 @@ class BlockAccessibilityService : AccessibilityService() {
         serviceScope.launch {
             Log.d("BlockAccessibilityService", "=== Checking block info for: $packageName ===")
 
-            // 使用 BlockingEngine 获取阻止信息
-            // openedFromUMind = false，因为从无障碍服务检测到的都是外部打开
-            val blockInfo = blockingEngine.getBlockInfo(
-                packageName = packageName,
-                openedFromUMind = false
-            )
+            // Check cache first to reduce database queries
+            val now = System.currentTimeMillis()
+            val cachedInfo = blockInfoCache[packageName]
+            val blockInfo = if (cachedInfo != null && (now - cachedInfo.second) < BLOCK_INFO_CACHE_MS) {
+                Log.d("BlockAccessibilityService", "Using cached block info for $packageName")
+                cachedInfo.first
+            } else {
+                // 使用 BlockingEngine 获取阻止信息
+                // openedFromUMind = false，因为从无障碍服务检测到的都是外部打开
+                val info = blockingEngine.getBlockInfo(
+                    packageName = packageName,
+                    openedFromUMind = false
+                )
+                // Cache the result
+                blockInfoCache[packageName] = Pair(info, now)
+                // Clean old cache entries (keep only last 10)
+                if (blockInfoCache.size > 10) {
+                    val oldestKey = blockInfoCache.minByOrNull { it.value.second }?.key
+                    oldestKey?.let { blockInfoCache.remove(it) }
+                }
+                info
+            }
 
             Log.d("BlockAccessibilityService", "Block info: shouldBlock=${blockInfo.shouldBlock}, reasons=${blockInfo.reasons.size}")
             blockInfo.usageInfo?.let { info ->
