@@ -3,10 +3,11 @@
     android:accessibilityEventTypes="typeWindowStateChanged|typeWindowContentChanged"
     android:accessibilityFeedbackType="feedbackGeneric"
     android:notificationTimeout="50"
-    android:canPerformGestures="false"
+    android:canPerformGestures="true"
+    android:canRetrieveWindowContent="true"
     android:summary="@string/accessibility_service_summary"
     android:description="@string/accessibility_service_description"
-    android:accessibilityFlags="flagReportViewIds"
+    android:accessibilityFlags="flagReportViewIds|flagRetrieveInteractiveWindows|flagRequestFilterKeyEvents"
     android:settingsActivity="com.example.umind.MainActivity" />
 
 
