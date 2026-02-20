@@ -139,64 +139,45 @@ class FocusRepositoryImpl @Inject constructor(
         getInstalledApps()
     }
 
+    /**
+     * Load installed apps - optimized version
+     * Only queries launcher apps (user-facing apps) without loading icons
+     * Icons are loaded on-demand by AppIconLoader
+     */
     private suspend fun loadInstalledApps(): Result<List<AppInfo>> {
         return try {
             val pm = context.packageManager
-            val apps = mutableSetOf<AppInfo>()
+            // Use LinkedHashMap to deduplicate by packageName while preserving order
+            val appsMap = linkedMapOf<String, AppInfo>()
 
-            // Method 1: Get launcher apps
-            try {
-                val launcherIntent = Intent(Intent.ACTION_MAIN).apply {
-                    addCategory(Intent.CATEGORY_LAUNCHER)
-                }
-                val resolveInfos = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
-                    pm.queryIntentActivities(launcherIntent, PackageManager.ResolveInfoFlags.of(0))
-                } else {
-                    @Suppress("DEPRECATION")
-                    pm.queryIntentActivities(launcherIntent, 0)
-                }
-                resolveInfos.forEach { resolveInfo ->
-                    val packageName = resolveInfo.activityInfo?.packageName
-                    if (packageName != null && packageName != context.packageName) {
-                        val label = resolveInfo.loadLabel(pm)?.toString() ?: packageName
-                        val drawable = try { pm.getApplicationIcon(packageName) } catch (_: Exception) { null }
-                        val bitmap = drawable?.toBitmap(width = 96, height = 96)
-                        apps.add(AppInfo(packageName, label, bitmap, false))
-                    }
-                }
-            } catch (e: Exception) {
-                // Ignore and try next method
+            // Only use launcher apps query - faster and more relevant
+            val launcherIntent = Intent(Intent.ACTION_MAIN).apply {
+                addCategory(Intent.CATEGORY_LAUNCHER)
             }
 
-            // Method 2: Get installed applications
-            try {
-                val installedApps = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
-                    pm.getInstalledApplications(PackageManager.ApplicationInfoFlags.of(PackageManager.GET_META_DATA.toLong()))
-                } else {
-                    @Suppress("DEPRECATION")
-                    pm.getInstalledApplications(PackageManager.GET_META_DATA)
-                }
-                installedApps.forEach { appInfo ->
-                    val packageName = appInfo.packageName
-                    if (!packageName.startsWith("android.") &&
-                        !packageName.startsWith("com.android.") &&
-                        !packageName.startsWith("com.google.") &&
-                        !packageName.startsWith("com.miui.") &&
-                        !packageName.startsWith("com.xiaomi.") &&
-                        packageName != context.packageName) {
+            val resolveInfos = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
+                pm.queryIntentActivities(launcherIntent, PackageManager.ResolveInfoFlags.of(0))
+            } else {
+                @Suppress("DEPRECATION")
+                pm.queryIntentActivities(launcherIntent, 0)
+            }
 
-                        val label = try { pm.getApplicationLabel(appInfo).toString() } catch (_: Exception) { packageName }
-                        val drawable = try { pm.getApplicationIcon(packageName) } catch (_: Exception) { null }
-                        val bitmap = drawable?.toBitmap(width = 96, height = 96)
-                        apps.add(AppInfo(packageName, label, bitmap, false))
+            // Build app list without loading icons (much faster)
+            // Use map to automatically deduplicate by packageName
+            resolveInfos.forEach { resolveInfo ->
+                val packageName = resolveInfo.activityInfo?.packageName
+                if (packageName != null && packageName != context.packageName) {
+                    // Only add if not already in map (avoid duplicates)
+                    if (!appsMap.containsKey(packageName)) {
+                        val label = resolveInfo.loadLabel(pm)?.toString() ?: packageName
+                        // Don't load icon here - will be loaded on-demand by AppIconLoader
+                        appsMap[packageName] = AppInfo(packageName, label, icon = null, isSystemApp = false)
                     }
                 }
-            } catch (e: Exception) {
-                // MIUI might reject this call
             }
 
             // If no apps found, add common apps as fallback
-            if (apps.isEmpty()) {
+            if (appsMap.isEmpty()) {
                 val commonApps = listOf(
                     "com.tencent.mm" to "微信",
                     "com.tencent.mobileqq" to "QQ",
@@ -211,13 +192,11 @@ class FocusRepositoryImpl @Inject constructor(
                 )
 
                 commonApps.forEach { (pkg, name) ->
-                    val drawable = try { pm.getApplicationIcon(pkg) } catch (_: Exception) { null }
-                    val bitmap = drawable?.toBitmap(width = 96, height = 96)
-                    apps.add(AppInfo(pkg, name, bitmap, false))
+                    appsMap[pkg] = AppInfo(pkg, name, icon = null, isSystemApp = false)
                 }
             }
 
-            Result.Success(apps.sortedBy { it.label.lowercase() })
+            Result.Success(appsMap.values.sortedBy { it.label.lowercase() })
         } catch (e: Exception) {
             Result.Error(e, "获取应用列表失败")
         }

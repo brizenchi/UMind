@@ -607,6 +607,9 @@ fun FocusModeSettingsDialog(
             onAppSelected = { app ->
                 viewModel.addToWhitelist(app.packageName)
                 showAppSelector = false
+            },
+            onLoadIcon = { packageName ->
+                viewModel.getIconForApp(packageName)
             }
         )
     }

@@ -1,6 +1,7 @@
 package com.example.umind.presentation.focus
 
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -150,7 +151,8 @@ fun AppSelectionScreen(
                             AppSelectionItem(
                                 app = app,
                                 isSelected = uiState.selectedPackages.contains(app.packageName),
-                                onToggle = { viewModel.toggleAppSelection(app.packageName) }
+                                onToggle = { viewModel.toggleAppSelection(app.packageName) },
+                                viewModel = viewModel
                             )
                         }
                     }
@@ -164,8 +166,27 @@ fun AppSelectionScreen(
 private fun AppSelectionItem(
     app: AppInfo,
     isSelected: Boolean,
-    onToggle: () -> Unit
+    onToggle: () -> Unit,
+    viewModel: AppSelectionViewModel
 ) {
+    // Track icon loading state
+    var icon by remember(app.packageName) { mutableStateOf(app.icon) }
+
+    // Load icon on-demand when item is displayed
+    LaunchedEffect(app.packageName) {
+        if (icon == null) {
+            // Trigger async load
+            viewModel.getIconForApp(app.packageName)
+        }
+    }
+
+    // Update icon when app changes
+    LaunchedEffect(app.icon) {
+        if (app.icon != null) {
+            icon = app.icon
+        }
+    }
+
     Surface(
         modifier = Modifier
             .fillMaxWidth()
@@ -188,12 +209,30 @@ private fun AppSelectionItem(
                 verticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier.weight(1f)
             ) {
-                app.icon?.let { icon ->
+                // Show icon if available, otherwise show placeholder
+                if (icon != null) {
                     Image(
-                        bitmap = icon.asImageBitmap(),
+                        bitmap = icon!!.asImageBitmap(),
                         contentDescription = null,
                         modifier = Modifier.size(48.dp)
                     )
+                } else {
+                    // Placeholder while loading
+                    Box(
+                        modifier = Modifier
+                            .size(48.dp)
+                            .background(
+                                MaterialTheme.colorScheme.surfaceVariant,
+                                shape = androidx.compose.foundation.shape.RoundedCornerShape(8.dp)
+                            ),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = app.label.firstOrNull()?.uppercase() ?: "?",
+                            style = MaterialTheme.typography.titleMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
                 }
                 Column {
                     Text(

@@ -1,5 +1,6 @@
 package com.example.umind.presentation.focusmode
 
+import android.graphics.Bitmap
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.umind.data.repository.FocusModeRepository
@@ -8,6 +9,7 @@ import com.example.umind.domain.model.FocusMode
 import com.example.umind.domain.model.FocusModeType
 import com.example.umind.domain.model.TimeRestriction
 import com.example.umind.domain.usecase.GetInstalledAppsUseCase
+import com.example.umind.util.AppIconLoader
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -24,11 +26,15 @@ import javax.inject.Inject
 @HiltViewModel
 class FocusModeViewModel @Inject constructor(
     private val focusModeRepository: FocusModeRepository,
-    private val getInstalledAppsUseCase: GetInstalledAppsUseCase
+    private val getInstalledAppsUseCase: GetInstalledAppsUseCase,
+    private val appIconLoader: AppIconLoader
 ) : ViewModel() {
 
     private val _installedApps = MutableStateFlow<List<AppInfo>>(emptyList())
     val installedApps: StateFlow<List<AppInfo>> = _installedApps.asStateFlow()
+
+    // Cache for loaded icons
+    private val loadedIcons = mutableMapOf<String, Bitmap?>()
 
     val focusMode: StateFlow<FocusMode> = focusModeRepository.getFocusMode()
         .stateIn(
@@ -110,5 +116,46 @@ class FocusModeViewModel @Inject constructor(
         viewModelScope.launch {
             focusModeRepository.removeFromWhitelist(packageName)
         }
+    }
+
+    /**
+     * Load icon for a specific app on-demand (non-suspend version for callbacks)
+     * Returns cached icon immediately, or null if not cached (will load asynchronously)
+     */
+    fun getIconForApp(packageName: String): Bitmap? {
+        // Return cached icon if available
+        loadedIcons[packageName]?.let { return it }
+
+        // Start loading asynchronously
+        viewModelScope.launch {
+            loadIconForApp(packageName)
+        }
+
+        return null
+    }
+
+    /**
+     * Load icon for a specific app on-demand (suspend version)
+     * Returns the loaded icon (or null if loading fails)
+     */
+    private suspend fun loadIconForApp(packageName: String): Bitmap? {
+        // Return cached icon if available
+        loadedIcons[packageName]?.let { return it }
+
+        // Load icon
+        val icon = appIconLoader.loadIcon(packageName)
+        loadedIcons[packageName] = icon
+
+        // Update the app in the installed apps list with the loaded icon
+        val updatedApps = _installedApps.value.map { app ->
+            if (app.packageName == packageName) {
+                app.copy(icon = icon)
+            } else {
+                app
+            }
+        }
+        _installedApps.value = updatedApps
+
+        return icon
     }
 }

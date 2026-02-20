@@ -1,5 +1,8 @@
 package com.example.umind.ui.components
 
+import android.graphics.Bitmap
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -10,6 +13,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
@@ -170,7 +174,8 @@ fun CountdownSelectorDialog(
 fun AppSelectorDialog(
     apps: List<AppInfo>,
     onDismiss: () -> Unit,
-    onAppSelected: (AppInfo) -> Unit
+    onAppSelected: (AppInfo) -> Unit,
+    onLoadIcon: ((String) -> Bitmap?)? = null
 ) {
     Dialog(onDismissRequest = onDismiss) {
         Card(
@@ -204,27 +209,11 @@ fun AppSelectorDialog(
                     verticalArrangement = Arrangement.spacedBy(ComponentSpacing.smallSpacing)
                 ) {
                     items(apps, key = { it.packageName }) { app ->
-                        Surface(
+                        AppSelectorItem(
+                            app = app,
                             onClick = { onAppSelected(app) },
-                            modifier = Modifier.fillMaxWidth(),
-                            shape = RoundedCornerShape(CornerRadius.medium),
-                            color = MaterialTheme.colorScheme.surfaceVariant
-                        ) {
-                            Column(
-                                modifier = Modifier.padding(ComponentSpacing.pagePadding)
-                            ) {
-                                Text(
-                                    text = app.label,
-                                    style = MaterialTheme.typography.bodyLarge,
-                                    fontWeight = FontWeight.Medium
-                                )
-                                Text(
-                                    text = app.packageName,
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
-                        }
+                            onLoadIcon = onLoadIcon
+                        )
                     }
                 }
 
@@ -238,6 +227,86 @@ fun AppSelectorDialog(
                 ) {
                     Text("取消")
                 }
+            }
+        }
+    }
+}
+
+@Composable
+private fun AppSelectorItem(
+    app: AppInfo,
+    onClick: () -> Unit,
+    onLoadIcon: ((String) -> Bitmap?)? = null
+) {
+    // Track icon loading state
+    var icon by remember(app.packageName) { mutableStateOf(app.icon) }
+
+    // Load icon on-demand when item is displayed
+    LaunchedEffect(app.packageName) {
+        if (icon == null && onLoadIcon != null) {
+            // Trigger async load (returns cached or null)
+            val loadedIcon = onLoadIcon(app.packageName)
+            if (loadedIcon != null) {
+                icon = loadedIcon
+            }
+        }
+    }
+
+    // Update icon when app changes
+    LaunchedEffect(app.icon) {
+        if (app.icon != null) {
+            icon = app.icon
+        }
+    }
+
+    Surface(
+        onClick = onClick,
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(CornerRadius.medium),
+        color = MaterialTheme.colorScheme.surfaceVariant
+    ) {
+        Row(
+            modifier = Modifier.padding(ComponentSpacing.pagePadding),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            // Show icon if available, otherwise show placeholder
+            if (icon != null) {
+                Image(
+                    bitmap = icon!!.asImageBitmap(),
+                    contentDescription = null,
+                    modifier = Modifier.size(48.dp)
+                )
+            } else {
+                // Placeholder while loading
+                Box(
+                    modifier = Modifier
+                        .size(48.dp)
+                        .background(
+                            MaterialTheme.colorScheme.surface,
+                            shape = RoundedCornerShape(8.dp)
+                        ),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = app.label.firstOrNull()?.uppercase() ?: "?",
+                        style = MaterialTheme.typography.titleMedium,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                }
+            }
+
+            Column {
+                Text(
+                    text = app.label,
+                    style = MaterialTheme.typography.bodyLarge,
+                    fontWeight = FontWeight.Medium
+                )
+                Text(
+                    text = app.packageName,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
             }
         }
     }

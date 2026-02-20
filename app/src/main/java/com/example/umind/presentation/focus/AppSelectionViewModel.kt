@@ -1,10 +1,12 @@
 package com.example.umind.presentation.focus
 
+import android.graphics.Bitmap
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.umind.domain.model.AppInfo
 import com.example.umind.domain.model.Result
 import com.example.umind.domain.usecase.GetInstalledAppsUseCase
+import com.example.umind.util.AppIconLoader
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -17,13 +19,17 @@ import javax.inject.Inject
  */
 @HiltViewModel
 class AppSelectionViewModel @Inject constructor(
-    private val getInstalledAppsUseCase: GetInstalledAppsUseCase
+    private val getInstalledAppsUseCase: GetInstalledAppsUseCase,
+    private val appIconLoader: AppIconLoader
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(AppSelectionUiState())
     val uiState: StateFlow<AppSelectionUiState> = _uiState.asStateFlow()
 
     private var allApps: List<AppInfo> = emptyList()
+
+    // Cache for loaded icons
+    private val loadedIcons = mutableMapOf<String, Bitmap?>()
 
     init {
         loadApps()
@@ -88,6 +94,47 @@ class AppSelectionViewModel @Inject constructor(
 
     fun clearError() {
         _uiState.value = _uiState.value.copy(error = null)
+    }
+
+    /**
+     * Load icon for a specific app on-demand (non-suspend version for UI)
+     * Returns cached icon immediately, or triggers async load and returns null
+     */
+    fun getIconForApp(packageName: String): Bitmap? {
+        // Return cached icon if available
+        loadedIcons[packageName]?.let { return it }
+
+        // Start loading asynchronously
+        viewModelScope.launch {
+            loadIconForApp(packageName)
+        }
+
+        return null
+    }
+
+    /**
+     * Load icon for a specific app on-demand (suspend version)
+     * Returns the loaded icon (or null if loading fails)
+     */
+    private suspend fun loadIconForApp(packageName: String): Bitmap? {
+        // Return cached icon if available
+        loadedIcons[packageName]?.let { return it }
+
+        // Load icon
+        val icon = appIconLoader.loadIcon(packageName)
+        loadedIcons[packageName] = icon
+
+        // Update the app in the filtered list with the loaded icon
+        val updatedApps = _uiState.value.filteredApps.map { app ->
+            if (app.packageName == packageName) {
+                app.copy(icon = icon)
+            } else {
+                app
+            }
+        }
+        _uiState.value = _uiState.value.copy(filteredApps = updatedApps)
+
+        return icon
     }
 }
 
