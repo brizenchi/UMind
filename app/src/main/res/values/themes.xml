@@ -2,4 +2,11 @@
 <resources>
 
     <style name="Theme.UMind" parent="android:Theme.Material.Light.NoActionBar" />
+
+    <!-- 启动屏幕主题 -->
+    <style name="Theme.UMind.Splash" parent="Theme.UMind">
+        <item name="android:windowBackground">@drawable/splash_background</item>
+        <item name="android:windowNoTitle">true</item>
+        <item name="android:windowFullscreen">false</item>
+    </style>
 </resources>

@@ -67,7 +67,7 @@
             android:name="com.example.umind.MainActivity"
             android:exported="true"
             android:label="@string/app_name"
-            android:theme="@style/Theme.UMind">
+            android:theme="@style/Theme.UMind.Splash">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
 

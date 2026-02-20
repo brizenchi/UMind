@@ -63,6 +63,10 @@ class MainActivity : ComponentActivity() {
     @OptIn(ExperimentalMaterial3Api::class)
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+
+        // 切换到正常主题（从启动屏幕主题切换）
+        setTheme(R.style.Theme_UMind)
+
         enableEdgeToEdge()
 
         // 请求通知权限 (Android 13+)
