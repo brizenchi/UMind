@@ -8,6 +8,7 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
@@ -25,6 +26,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
@@ -152,9 +154,14 @@ fun MainScreen() {
 
     Scaffold(
         modifier = Modifier.fillMaxSize(),
+        containerColor = MaterialTheme.colorScheme.background,
         topBar = {
             if (isSecondaryPage) {
                 TopAppBar(
+                    colors = TopAppBarDefaults.topAppBarColors(
+                        containerColor = MaterialTheme.colorScheme.background,
+                        titleContentColor = MaterialTheme.colorScheme.onBackground
+                    ),
                     title = {
                         Text(
                             when (currentRoute) {
@@ -176,39 +183,77 @@ fun MainScreen() {
         },
         bottomBar = {
             if (!isSecondaryPage) {
-                NavigationBar {
-                    NavigationBarItem(
-                        selected = currentRoute == "daily_management",
-                        onClick = { navController.navigate("daily_management") {
-                            popUpTo("daily_management") { inclusive = true }
-                        }},
-                        icon = { Icon(Icons.Filled.Schedule, contentDescription = null) },
-                        label = { Text("日常管理") }
-                    )
-                    NavigationBarItem(
-                        selected = currentRoute == "focus_mode",
-                        onClick = { navController.navigate("focus_mode") {
-                            popUpTo("daily_management")
-                        }},
-                        icon = { Icon(Icons.Filled.LightMode, contentDescription = null) },
-                        label = { Text("专注模式") }
-                    )
-                    NavigationBarItem(
-                        selected = currentRoute == "stats",
-                        onClick = { navController.navigate("stats") {
-                            popUpTo("daily_management")
-                        }},
-                        icon = { Icon(Icons.Filled.BarChart, contentDescription = null) },
-                        label = { Text("统计") }
-                    )
-                    NavigationBarItem(
-                        selected = currentRoute == "settings",
-                        onClick = { navController.navigate("settings") {
-                            popUpTo("daily_management")
-                        }},
-                        icon = { Icon(Icons.Filled.Person, contentDescription = null) },
-                        label = { Text("我的") }
-                    )
+                Surface(
+                    color = MaterialTheme.colorScheme.surface.copy(alpha = 0.94f),
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.8f)),
+                    tonalElevation = 0.dp,
+                    shadowElevation = 10.dp
+                ) {
+                    NavigationBar(
+                        containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0f),
+                        tonalElevation = 0.dp
+                    ) {
+                        NavigationBarItem(
+                            selected = currentRoute == "daily_management",
+                            onClick = { navController.navigate("daily_management") {
+                                popUpTo("daily_management") { inclusive = true }
+                            }},
+                            colors = NavigationBarItemDefaults.colors(
+                                selectedIconColor = MaterialTheme.colorScheme.primary,
+                                selectedTextColor = MaterialTheme.colorScheme.primary,
+                                indicatorColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.82f),
+                                unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                                unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant
+                            ),
+                            icon = { Icon(Icons.Filled.Schedule, contentDescription = null) },
+                            label = { Text("日常管理") }
+                        )
+                        NavigationBarItem(
+                            selected = currentRoute == "focus_mode",
+                            onClick = { navController.navigate("focus_mode") {
+                                popUpTo("daily_management")
+                            }},
+                            colors = NavigationBarItemDefaults.colors(
+                                selectedIconColor = MaterialTheme.colorScheme.primary,
+                                selectedTextColor = MaterialTheme.colorScheme.primary,
+                                indicatorColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.82f),
+                                unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                                unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant
+                            ),
+                            icon = { Icon(Icons.Filled.LightMode, contentDescription = null) },
+                            label = { Text("专注模式") }
+                        )
+                        NavigationBarItem(
+                            selected = currentRoute == "stats",
+                            onClick = { navController.navigate("stats") {
+                                popUpTo("daily_management")
+                            }},
+                            colors = NavigationBarItemDefaults.colors(
+                                selectedIconColor = MaterialTheme.colorScheme.primary,
+                                selectedTextColor = MaterialTheme.colorScheme.primary,
+                                indicatorColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.82f),
+                                unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                                unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant
+                            ),
+                            icon = { Icon(Icons.Filled.BarChart, contentDescription = null) },
+                            label = { Text("统计") }
+                        )
+                        NavigationBarItem(
+                            selected = currentRoute == "settings",
+                            onClick = { navController.navigate("settings") {
+                                popUpTo("daily_management")
+                            }},
+                            colors = NavigationBarItemDefaults.colors(
+                                selectedIconColor = MaterialTheme.colorScheme.primary,
+                                selectedTextColor = MaterialTheme.colorScheme.primary,
+                                indicatorColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.82f),
+                                unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                                unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant
+                            ),
+                            icon = { Icon(Icons.Filled.Person, contentDescription = null) },
+                            label = { Text("我的") }
+                        )
+                    }
                 }
             }
         }

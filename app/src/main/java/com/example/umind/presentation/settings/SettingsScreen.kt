@@ -22,6 +22,10 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import com.example.umind.BlockAccessibilityService
+import com.example.umind.ui.components.FocusCard
+import com.example.umind.ui.components.ImmersiveBackground
+import com.example.umind.ui.components.ScreenHeader
+import com.example.umind.ui.components.StatusPill
 import com.example.umind.util.AccessibilityUtil
 import com.example.umind.util.BatteryOptimizationHelper
 import com.example.umind.util.MiuiDeviceHelper
@@ -85,207 +89,186 @@ fun SettingsScreen(
         }
     }
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .verticalScroll(rememberScrollState())
-            .padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp)
-    ) {
-        Text(
-            text = "我的",
-            style = MaterialTheme.typography.headlineMedium,
-            fontWeight = FontWeight.Bold
-        )
-
-        // 权限状态卡片 - 简洁版
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(16.dp)
+    ImmersiveBackground {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .verticalScroll(rememberScrollState())
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            Column(modifier = Modifier.padding(20.dp)) {
-                Text(
-                    text = "权限状态",
-                    style = MaterialTheme.typography.titleLarge,
-                    fontWeight = FontWeight.Bold
-                )
-                Spacer(modifier = Modifier.height(16.dp))
+            ScreenHeader(
+                title = "我的",
+                subtitle = "设备状态、权限与数据管理"
+            )
 
-                // 无障碍服务
-                PermissionItem(
-                    title = "无障碍服务",
-                    isEnabled = hasAccessibilityService,
-                    onClick = {
-                        context.startActivity(BlockAccessibilityService.openAccessibilitySettingsIntent())
-                    }
-                )
-
-                Spacer(modifier = Modifier.height(12.dp))
-
-                // 弹窗权限
-                PermissionItem(
-                    title = "弹窗权限",
-                    isEnabled = hasOverlayPermission,
-                    onClick = {
-                        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.M) {
-                            val intent = Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION).apply {
-                                data = Uri.parse("package:${context.packageName}")
-                            }
-                            context.startActivity(intent)
-                        }
-                    }
-                )
-
-                Spacer(modifier = Modifier.height(12.dp))
-
-                // 电池优化
-                PermissionItem(
-                    title = "电池优化",
-                    isEnabled = hasBatteryOptimization,
-                    onClick = {
-                        BatteryOptimizationHelper.requestIgnoreBatteryOptimizations(context)
-                    }
-                )
-            }
-        }
-
-        // MIUI特定设置 - 仅在MIUI设备上显示
-        if (isMiuiDevice) {
-            Card(
+            FocusCard(
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(16.dp),
-                colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.secondaryContainer
-                )
+                containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.92f)
             ) {
                 Column(modifier = Modifier.padding(20.dp)) {
                     Text(
-                        text = "MIUI 额外设置",
+                        text = "权限状态",
                         style = MaterialTheme.typography.titleLarge,
                         fontWeight = FontWeight.Bold
                     )
+                    Spacer(modifier = Modifier.height(16.dp))
+                    PermissionItem(
+                        title = "无障碍服务",
+                        isEnabled = hasAccessibilityService,
+                        onClick = {
+                            context.startActivity(BlockAccessibilityService.openAccessibilitySettingsIntent())
+                        }
+                    )
                     Spacer(modifier = Modifier.height(12.dp))
-
-                    OutlinedButton(
-                        onClick = { MiuiDeviceHelper.openMiuiAutoStartSettings(context) },
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Text("允许自启动")
-                    }
-
-                    Spacer(modifier = Modifier.height(8.dp))
-
-                    OutlinedButton(
-                        onClick = { MiuiDeviceHelper.openMiuiBatterySaverSettings(context) },
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Text("省电策略")
-                    }
-
-                    Spacer(modifier = Modifier.height(8.dp))
-
-                    OutlinedButton(
-                        onClick = { MiuiDeviceHelper.openMiuiBackgroundPopupSettings(context) },
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Text("后台弹出")
-                    }
-                }
-            }
-        }
-
-        // 关于
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(16.dp)
-        ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(20.dp),
-                horizontalAlignment = Alignment.CenterHorizontally
-            ) {
-                // Logo
-                Image(
-                    painter = painterResource(id = R.drawable.logo),
-                    contentDescription = "UMind Logo",
-                    modifier = Modifier
-                        .size(80.dp)
-                        .padding(bottom = 16.dp)
-                )
-
-                // 版本信息
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        text = "版本",
-                        style = MaterialTheme.typography.titleMedium
-                    )
-                    Text(
-                        text = "1.0.0",
-                        style = MaterialTheme.typography.bodyLarge,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-            }
-        }
-
-        // 数据管理
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(16.dp)
-        ) {
-            Column(modifier = Modifier.padding(20.dp)) {
-                Text(
-                    text = "数据管理",
-                    style = MaterialTheme.typography.titleLarge,
-                    fontWeight = FontWeight.Bold
-                )
-                Spacer(modifier = Modifier.height(16.dp))
-
-                var showClearDialog by remember { mutableStateOf(false) }
-
-                OutlinedButton(
-                    onClick = { showClearDialog = true },
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Text("清除所有使用记录")
-                }
-
-                if (showClearDialog) {
-                    androidx.compose.material3.AlertDialog(
-                        onDismissRequest = { showClearDialog = false },
-                        title = { Text("确认清除") },
-                        text = { Text("确定要清除所有使用记录吗？此操作无法撤销。") },
-                        confirmButton = {
-                            TextButton(
-                                onClick = {
-                                    viewModel.clearAllRecords()
-                                    showClearDialog = false
+                    PermissionItem(
+                        title = "弹窗权限",
+                        isEnabled = hasOverlayPermission,
+                        onClick = {
+                            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.M) {
+                                val intent = Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION).apply {
+                                    data = Uri.parse("package:${context.packageName}")
                                 }
-                            ) {
-                                Text("确定", color = MaterialTheme.colorScheme.error)
-                            }
-                        },
-                        dismissButton = {
-                            TextButton(onClick = { showClearDialog = false }) {
-                                Text("取消")
+                                context.startActivity(intent)
                             }
                         }
                     )
-                }
-
-                // 显示调试信息
-                if (uiState.debugMessage.isNotEmpty()) {
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Text(
-                        text = uiState.debugMessage,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    Spacer(modifier = Modifier.height(12.dp))
+                    PermissionItem(
+                        title = "电池优化",
+                        isEnabled = hasBatteryOptimization,
+                        onClick = { BatteryOptimizationHelper.requestIgnoreBatteryOptimizations(context) }
                     )
+                }
+            }
+
+            if (isMiuiDevice) {
+                FocusCard(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(16.dp),
+                    containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.85f)
+                ) {
+                    Column(modifier = Modifier.padding(20.dp)) {
+                        Text(
+                            text = "MIUI 额外设置",
+                            style = MaterialTheme.typography.titleLarge,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Spacer(modifier = Modifier.height(12.dp))
+                        OutlinedButton(
+                            onClick = { MiuiDeviceHelper.openMiuiAutoStartSettings(context) },
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text("允许自启动")
+                        }
+                        Spacer(modifier = Modifier.height(8.dp))
+                        OutlinedButton(
+                            onClick = { MiuiDeviceHelper.openMiuiBatterySaverSettings(context) },
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text("省电策略")
+                        }
+                        Spacer(modifier = Modifier.height(8.dp))
+                        OutlinedButton(
+                            onClick = { MiuiDeviceHelper.openMiuiBackgroundPopupSettings(context) },
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text("后台弹出")
+                        }
+                    }
+                }
+            }
+
+            FocusCard(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(16.dp),
+                containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.92f)
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(20.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Image(
+                        painter = painterResource(id = R.drawable.logo),
+                        contentDescription = "UMind Logo",
+                        modifier = Modifier
+                            .size(80.dp)
+                            .padding(bottom = 16.dp)
+                    )
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "版本",
+                            style = MaterialTheme.typography.titleMedium
+                        )
+                        Text(
+                            text = "1.0.0",
+                            style = MaterialTheme.typography.bodyLarge,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+            }
+
+            FocusCard(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(16.dp),
+                containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.92f)
+            ) {
+                Column(modifier = Modifier.padding(20.dp)) {
+                    Text(
+                        text = "数据管理",
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Spacer(modifier = Modifier.height(16.dp))
+
+                    var showClearDialog by remember { mutableStateOf(false) }
+
+                    OutlinedButton(
+                        onClick = { showClearDialog = true },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text("清除所有使用记录")
+                    }
+
+                    if (showClearDialog) {
+                        androidx.compose.material3.AlertDialog(
+                            onDismissRequest = { showClearDialog = false },
+                            title = { Text("确认清除") },
+                            text = { Text("确定要清除所有使用记录吗？此操作无法撤销。") },
+                            confirmButton = {
+                                TextButton(
+                                    onClick = {
+                                        viewModel.clearAllRecords()
+                                        showClearDialog = false
+                                    }
+                                ) {
+                                    Text("确定", color = MaterialTheme.colorScheme.error)
+                                }
+                            },
+                            dismissButton = {
+                                TextButton(onClick = { showClearDialog = false }) {
+                                    Text("取消")
+                                }
+                            }
+                        )
+                    }
+
+                    if (uiState.debugMessage.isNotEmpty()) {
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(
+                            text = uiState.debugMessage,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
                 }
             }
         }
@@ -309,11 +292,7 @@ private fun PermissionItem(
         )
 
         if (isEnabled) {
-            Text(
-                text = "已启用",
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.primary
-            )
+            StatusPill(text = "已启用")
         } else {
             TextButton(onClick = onClick) {
                 Text("去设置")

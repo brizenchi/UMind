@@ -13,6 +13,7 @@ import androidx.compose.ui.unit.dp
 import com.example.umind.domain.model.AppUsageStats
 import com.example.umind.presentation.stats.formatDuration
 import com.example.umind.presentation.stats.getUsagePercentage
+import com.example.umind.ui.components.FocusCard
 
 /**
  * App usage ranking list
@@ -23,9 +24,10 @@ fun AppUsageRankingList(
     modifier: Modifier = Modifier
 ) {
     if (appUsageStats.isEmpty()) {
-        Card(
+        FocusCard(
             modifier = modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(12.dp)
+            shape = RoundedCornerShape(12.dp),
+            containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.92f)
         ) {
             Box(
                 modifier = Modifier
@@ -45,9 +47,10 @@ fun AppUsageRankingList(
 
     val maxUsage = appUsageStats.maxOfOrNull { it.usageDurationMillis } ?: 1L
 
-    Card(
+    FocusCard(
         modifier = modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(12.dp)
+        shape = RoundedCornerShape(12.dp),
+        containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.92f)
     ) {
         Column(
             modifier = Modifier.padding(16.dp)
@@ -96,7 +99,7 @@ private fun AppUsageItem(
         }
         Spacer(modifier = Modifier.height(6.dp))
         LinearProgressIndicator(
-            progress = getUsagePercentage(appUsageStats.usageDurationMillis, maxUsage),
+            progress = { getUsagePercentage(appUsageStats.usageDurationMillis, maxUsage) },
             modifier = Modifier
                 .fillMaxWidth()
                 .height(8.dp),

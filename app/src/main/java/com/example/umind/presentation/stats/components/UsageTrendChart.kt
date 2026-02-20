@@ -9,11 +9,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.example.umind.domain.model.UsageTrend
 import com.example.umind.presentation.stats.formatDurationShort
+import com.example.umind.ui.components.FocusCard
 import java.time.format.DateTimeFormatter
 import java.util.*
 
@@ -29,9 +29,10 @@ fun UsageTrendChart(
         return
     }
 
-    Card(
+    FocusCard(
         modifier = modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(12.dp)
+        shape = RoundedCornerShape(12.dp),
+        containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.92f)
     ) {
         Column(
             modifier = Modifier.padding(16.dp)
@@ -89,7 +90,7 @@ private fun TrendBar(
     modifier: Modifier = Modifier
 ) {
     val barColor = MaterialTheme.colorScheme.primary
-    val backgroundColor = MaterialTheme.colorScheme.surfaceVariant
+    val backgroundColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.7f)
 
     Column(
         modifier = modifier.padding(horizontal = 4.dp),

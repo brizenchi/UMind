@@ -19,6 +19,8 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import com.example.umind.presentation.stats.components.AppUsageRankingList
 import com.example.umind.presentation.stats.components.StatsOverviewCard
 import com.example.umind.presentation.stats.components.UsageTrendChart
+import com.example.umind.ui.components.FocusCard
+import com.example.umind.ui.components.ImmersiveBackground
 import com.example.umind.ui.theme.ComponentSpacing
 import com.example.umind.ui.theme.CornerRadius
 
@@ -58,12 +60,17 @@ fun StatsScreen(
     }
 
     Scaffold(
+        containerColor = MaterialTheme.colorScheme.background,
         topBar = {
             TopAppBar(
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = MaterialTheme.colorScheme.background,
+                    titleContentColor = MaterialTheme.colorScheme.onBackground
+                ),
                 title = {
                     Text(
                         text = "使用统计",
-                        fontWeight = FontWeight.Bold
+                        fontWeight = FontWeight.SemiBold
                     )
                 },
                 actions = {
@@ -77,15 +84,17 @@ fun StatsScreen(
             )
         }
     ) { paddingValues ->
-        if (!hasUsageAccess) {
-            PermissionRequiredContent(
-                modifier = Modifier.padding(paddingValues)
-            )
-        } else {
-            StatsContent(
-                uiState = uiState,
-                modifier = Modifier.padding(paddingValues)
-            )
+        ImmersiveBackground(modifier = Modifier.padding(paddingValues)) {
+            if (!hasUsageAccess) {
+                PermissionRequiredContent(
+                    modifier = Modifier
+                )
+            } else {
+                StatsContent(
+                    uiState = uiState,
+                    modifier = Modifier
+                )
+            }
         }
     }
 }
@@ -102,12 +111,10 @@ private fun PermissionRequiredContent(
             .padding(ComponentSpacing.pagePadding),
         verticalArrangement = Arrangement.spacedBy(ComponentSpacing.componentSpacing)
     ) {
-        Card(
+        FocusCard(
             modifier = Modifier.fillMaxWidth(),
             shape = RoundedCornerShape(CornerRadius.large),
-            elevation = CardDefaults.cardElevation(
-                defaultElevation = 2.dp
-            )
+            containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.92f)
         ) {
             Column(
                 modifier = Modifier.padding(ComponentSpacing.cardPadding),

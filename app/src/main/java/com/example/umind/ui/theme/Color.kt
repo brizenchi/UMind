@@ -2,82 +2,60 @@ package com.example.umind.ui.theme
 
 import androidx.compose.ui.graphics.Color
 
-// ============================================
-// UMind Design System v1.0 - Color Palette
-// ============================================
-
-// Primary Colors - 深紫色（专注和沉静）
-val Primary = Color(0xFF6750A4)
+// Brand and interactive colors
+val Primary = Color(0xFF3B82F6)
+val PrimaryPressed = Color(0xFF2563EB)
+val PrimarySoft = Color(0xFF60A5FA)
 val OnPrimary = Color(0xFFFFFFFF)
-val PrimaryContainer = Color(0xFFEADDFF)
-val OnPrimaryContainer = Color(0xFF21005D)
 
-// Secondary Colors - 青绿色（成长和平衡）
-val Secondary = Color(0xFF625B71)
-val OnSecondary = Color(0xFFFFFFFF)
-val SecondaryContainer = Color(0xFFE8DEF8)
-val OnSecondaryContainer = Color(0xFF1D192B)
+// Dark scheme (immersive default)
+val DarkBackground = Color(0xFF0B1220)
+val DarkOnBackground = Color(0xFFF8FAFC)
+val DarkSurface = Color(0xFF111827)
+val DarkOnSurface = Color(0xFFF8FAFC)
+val DarkSurfaceVariant = Color(0xFF1F2937)
+val DarkOnSurfaceVariant = Color(0xFF94A3B8)
+val DarkOutline = Color(0xFF334155)
+val DarkOutlineVariant = Color(0xFF243244)
+val DarkPrimaryContainer = Color(0xFF1E3A63)
+val DarkOnPrimaryContainer = Color(0xFFD9E8FF)
+val DarkSecondary = Color(0xFF8B9BB8)
+val DarkOnSecondary = Color(0xFF0B1220)
+val DarkSecondaryContainer = Color(0xFF243244)
+val DarkOnSecondaryContainer = Color(0xFFD2DEEF)
+val DarkTertiary = Color(0xFF7DD3FC)
+val DarkOnTertiary = Color(0xFF082F49)
+val DarkTertiaryContainer = Color(0xFF0C4A6E)
+val DarkOnTertiaryContainer = Color(0xFFD8F0FF)
 
-// Tertiary Colors - 温暖的橙色（重要操作）
-val Tertiary = Color(0xFF7D5260)
-val OnTertiary = Color(0xFFFFFFFF)
-val TertiaryContainer = Color(0xFFFFD8E4)
-val OnTertiaryContainer = Color(0xFF31111D)
+// Light scheme (same brand tone)
+val LightBackground = Color(0xFFF3F7FF)
+val LightOnBackground = Color(0xFF0F172A)
+val LightSurface = Color(0xFFFFFFFF)
+val LightOnSurface = Color(0xFF0F172A)
+val LightSurfaceVariant = Color(0xFFF1F5F9)
+val LightOnSurfaceVariant = Color(0xFF64748B)
+val LightOutline = Color(0xFFCBD5E1)
+val LightOutlineVariant = Color(0xFFE2E8F0)
+val LightPrimaryContainer = Color(0xFFDCE9FF)
+val LightOnPrimaryContainer = Color(0xFF102A43)
+val LightSecondary = Color(0xFF475569)
+val LightOnSecondary = Color(0xFFFFFFFF)
+val LightSecondaryContainer = Color(0xFFE2E8F0)
+val LightOnSecondaryContainer = Color(0xFF1E293B)
+val LightTertiary = Color(0xFF0EA5E9)
+val LightOnTertiary = Color(0xFFFFFFFF)
+val LightTertiaryContainer = Color(0xFFE0F2FE)
+val LightOnTertiaryContainer = Color(0xFF0C4A6E)
 
-// Background Colors
-val Background = Color(0xFFFFFBFE)
-val OnBackground = Color(0xFF1C1B1F)
-
-// Surface Colors
-val Surface = Color(0xFFFFFBFE)
-val OnSurface = Color(0xFF1C1B1F)
-val SurfaceVariant = Color(0xFFE7E0EC)
-val OnSurfaceVariant = Color(0xFF49454F)
-
-// Functional Colors
-val Success = Color(0xFF4CAF50)
+// Feedback
+val Success = Color(0xFF22C55E)
 val OnSuccess = Color(0xFFFFFFFF)
-
-val Warning = Color(0xFFFF9800)
-val OnWarning = Color(0xFF000000)
-
-val Error = Color(0xFFB3261E)
+val Warning = Color(0xFFF59E0B)
+val OnWarning = Color(0xFF111827)
+val Error = Color(0xFFEF4444)
 val OnError = Color(0xFFFFFFFF)
-val ErrorContainer = Color(0xFFF9DEDC)
-val OnErrorContainer = Color(0xFF410E0B)
-
-// Outline
-val Outline = Color(0xFF79747E)
-val OutlineVariant = Color(0xFFCAC4D0)
-
-// Dark Theme Colors
-val DarkPrimary = Color(0xFFD0BCFF)
-val DarkOnPrimary = Color(0xFF381E72)
-val DarkPrimaryContainer = Color(0xFF4F378B)
-val DarkOnPrimaryContainer = Color(0xFFEADDFF)
-
-val DarkSecondary = Color(0xFFCCC2DC)
-val DarkOnSecondary = Color(0xFF332D41)
-val DarkSecondaryContainer = Color(0xFF4A4458)
-val DarkOnSecondaryContainer = Color(0xFFE8DEF8)
-
-val DarkTertiary = Color(0xFFEFB8C8)
-val DarkOnTertiary = Color(0xFF492532)
-val DarkTertiaryContainer = Color(0xFF633B48)
-val DarkOnTertiaryContainer = Color(0xFFFFD8E4)
-
-val DarkBackground = Color(0xFF1C1B1F)
-val DarkOnBackground = Color(0xFFE6E1E5)
-
-val DarkSurface = Color(0xFF1C1B1F)
-val DarkOnSurface = Color(0xFFE6E1E5)
-val DarkSurfaceVariant = Color(0xFF49454F)
-val DarkOnSurfaceVariant = Color(0xFFCAC4D0)
-
-val DarkError = Color(0xFFF2B8B5)
-val DarkOnError = Color(0xFF601410)
-val DarkErrorContainer = Color(0xFF8C1D18)
-val DarkOnErrorContainer = Color(0xFFF9DEDC)
-
-val DarkOutline = Color(0xFF938F99)
-val DarkOutlineVariant = Color(0xFF49454F)
+val LightErrorContainer = Color(0xFFFEE2E2)
+val LightOnErrorContainer = Color(0xFF7F1D1D)
+val DarkErrorContainer = Color(0xFF7F1D1D)
+val DarkOnErrorContainer = Color(0xFFFEE2E2)

@@ -26,8 +26,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
-import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.drawscope.Stroke
@@ -40,7 +38,9 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import com.example.umind.domain.model.AppInfo
 import com.example.umind.domain.model.FocusModeType
 import com.example.umind.ui.components.CountdownSelectorDialog
-import com.example.umind.ui.components.AppSelectorDialog
+import com.example.umind.ui.components.FocusCard
+import com.example.umind.ui.components.ImmersiveBackground
+import com.example.umind.ui.components.ScreenHeader
 import com.example.umind.ui.theme.ComponentSpacing
 import com.example.umind.ui.theme.CornerRadius
 
@@ -56,62 +56,66 @@ fun FocusModeScreen(
     var showCountdownSelector by remember { mutableStateOf(false) }
     var showSettings by remember { mutableStateOf(false) }
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(MaterialTheme.colorScheme.surface)
-    ) {
-        // 顶部标题栏
-        Row(
+    ImmersiveBackground {
+        Column(
             modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 8.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
+                .fillMaxSize()
         ) {
-            Text(
-                text = "Focus",
-                style = MaterialTheme.typography.titleMedium,
-                color = MaterialTheme.colorScheme.primary
-            )
-            IconButton(onClick = { showSettings = true }) {
-                Icon(
-                    imageVector = Icons.Default.Settings,
-                    contentDescription = "设置",
-                    tint = MaterialTheme.colorScheme.onSurface
+            // 顶部标题栏
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 8.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                ScreenHeader(
+                    title = "专注模式",
+                    subtitle = "计时专注，保持节奏",
+                    modifier = Modifier.weight(1f)
+                )
+                IconButton(onClick = { showSettings = true }) {
+                    Icon(
+                        imageVector = Icons.Default.Settings,
+                        contentDescription = "设置",
+                        tint = MaterialTheme.colorScheme.onSurface
+                    )
+                }
+            }
+
+            // Tab 导航
+            TabRow(
+                selectedTabIndex = selectedTab,
+                containerColor = MaterialTheme.colorScheme.background.copy(alpha = 0.35f),
+                contentColor = MaterialTheme.colorScheme.primary,
+                divider = {
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                }
+            ) {
+                Tab(
+                    selected = selectedTab == 0,
+                    onClick = { selectedTab = 0 },
+                    text = { Text("Pomo") }
+                )
+                Tab(
+                    selected = selectedTab == 1,
+                    onClick = { selectedTab = 1 },
+                    text = { Text("Stopwatch") }
                 )
             }
-        }
 
-        // Tab 导航
-        TabRow(
-            selectedTabIndex = selectedTab,
-            containerColor = MaterialTheme.colorScheme.surface,
-            contentColor = MaterialTheme.colorScheme.primary
-        ) {
-            Tab(
-                selected = selectedTab == 0,
-                onClick = { selectedTab = 0 },
-                text = { Text("Pomo") }
-            )
-            Tab(
-                selected = selectedTab == 1,
-                onClick = { selectedTab = 1 },
-                text = { Text("Stopwatch") }
-            )
-        }
-
-        // 内容区域
-        when (selectedTab) {
-            0 -> PomoTab(
-                focusMode = focusMode,
-                viewModel = viewModel,
-                onShowCountdownSelector = { showCountdownSelector = true }
-            )
-            1 -> StopwatchTab(
-                focusMode = focusMode,
-                viewModel = viewModel
-            )
+            // 内容区域
+            when (selectedTab) {
+                0 -> PomoTab(
+                    focusMode = focusMode,
+                    viewModel = viewModel,
+                    onShowCountdownSelector = { showCountdownSelector = true }
+                )
+                1 -> StopwatchTab(
+                    focusMode = focusMode,
+                    viewModel = viewModel
+                )
+            }
         }
     }
 
@@ -270,17 +274,12 @@ fun PresetDurationButton(
     onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    Card(
+    FocusCard(
         onClick = onClick,
         modifier = modifier
             .aspectRatio(1f),
         shape = RoundedCornerShape(16.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceVariant
-        ),
-        elevation = CardDefaults.cardElevation(
-            defaultElevation = 2.dp
-        )
+        containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.82f)
     ) {
         Box(
             modifier = Modifier.fillMaxSize(),
@@ -441,6 +440,8 @@ fun CircularProgressIndicator(
         targetValue = if (isCountdown) progress else 0f,
         animationSpec = tween(durationMillis = 300)
     )
+    val trackColor = MaterialTheme.colorScheme.outlineVariant
+    val progressColor = MaterialTheme.colorScheme.primary
 
     Box(
         contentAlignment = Alignment.Center,
@@ -452,7 +453,7 @@ fun CircularProgressIndicator(
 
             // 背景圆
             drawArc(
-                color = Color(0xFFE0E0E0),
+                color = trackColor,
                 startAngle = -90f,
                 sweepAngle = 360f,
                 useCenter = false,
@@ -464,7 +465,7 @@ fun CircularProgressIndicator(
             // 进度圆弧（仅倒计时模式显示）
             if (isCountdown && isActive && animatedProgress > 0f) {
                 drawArc(
-                    color = Color(0xFF6750A4),
+                    color = progressColor,
                     startAngle = -90f,
                     sweepAngle = 360f * animatedProgress,
                     useCenter = false,
@@ -522,11 +523,12 @@ fun FocusModeSettingsDialog(
     val focusMode by viewModel.focusMode.collectAsState()
 
     Dialog(onDismissRequest = onDismiss) {
-        Card(
+        FocusCard(
             modifier = Modifier
                 .fillMaxWidth()
                 .fillMaxHeight(0.85f),
-            shape = RoundedCornerShape(CornerRadius.extraLarge)
+            shape = RoundedCornerShape(CornerRadius.extraLarge),
+            containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.94f)
         ) {
             Column(
                 modifier = Modifier
@@ -617,12 +619,10 @@ fun AppCheckboxItem(
         }
     }
 
-    Card(
+    FocusCard(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(CornerRadius.medium),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceVariant
-        )
+        containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.86f)
     ) {
         Row(
             modifier = Modifier
@@ -686,12 +686,10 @@ fun WhitelistAppItem(
     app: AppInfo,
     onRemove: () -> Unit
 ) {
-    Card(
+    FocusCard(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(CornerRadius.medium),
-        elevation = CardDefaults.cardElevation(
-            defaultElevation = 1.dp
-        )
+        containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.9f)
     ) {
         Row(
             modifier = Modifier

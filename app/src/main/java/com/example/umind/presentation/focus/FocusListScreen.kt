@@ -6,6 +6,8 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -16,7 +18,11 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavController
 import com.example.umind.domain.model.FocusStrategy
+import com.example.umind.ui.components.FocusCard
+import com.example.umind.ui.components.ImmersiveBackground
 import com.example.umind.ui.components.ModernDialog
+import com.example.umind.ui.components.ScreenHeader
+import com.example.umind.ui.components.StatusPill
 import com.example.umind.ui.theme.ComponentSpacing
 import com.example.umind.ui.theme.CornerRadius
 import com.example.umind.ui.theme.Spacing
@@ -32,64 +38,68 @@ fun FocusListScreen(
     val uiState by viewModel.uiState.collectAsState()
 
     Scaffold(
+        containerColor = MaterialTheme.colorScheme.background,
         floatingActionButton = {
             FloatingActionButton(
-                onClick = { navController.navigate("focus_edit") }
+                onClick = { navController.navigate("focus_edit") },
+                containerColor = MaterialTheme.colorScheme.primary,
+                contentColor = MaterialTheme.colorScheme.onPrimary,
+                shape = RoundedCornerShape(16.dp)
             ) {
                 Icon(Icons.Filled.Add, contentDescription = "添加专注策略")
             }
         }
     ) { paddingValues ->
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(paddingValues)
-                .padding(ComponentSpacing.pagePadding),
-            verticalArrangement = Arrangement.spacedBy(ComponentSpacing.componentSpacing)
-        ) {
-            Text(
-                text = "专注策略",
-                style = MaterialTheme.typography.headlineMedium,
-                fontWeight = FontWeight.Bold
-            )
+        ImmersiveBackground(modifier = Modifier.padding(paddingValues)) {
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(ComponentSpacing.pagePadding),
+                verticalArrangement = Arrangement.spacedBy(ComponentSpacing.componentSpacing)
+            ) {
+                ScreenHeader(
+                    title = "专注策略",
+                    subtitle = "创建并管理你的规则，保持稳定专注"
+                )
 
-            when (val state = uiState) {
-                is FocusListUiState.Loading -> {
-                    Box(
-                        modifier = Modifier.fillMaxSize(),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        CircularProgressIndicator()
-                    }
-                }
-
-                is FocusListUiState.Empty -> {
-                    EmptyStateCard()
-                }
-
-                is FocusListUiState.Success -> {
-                    LazyColumn(
-                        verticalArrangement = Arrangement.spacedBy(ComponentSpacing.smallSpacing)
-                    ) {
-                        items(state.strategies) { strategy ->
-                            FocusStrategyCard(
-                                strategy = strategy,
-                                onToggleActive = { isActive ->
-                                    viewModel.toggleStrategyActive(strategy.id, isActive)
-                                },
-                                onEdit = {
-                                    navController.navigate("focus_edit/${strategy.id}")
-                                },
-                                onDelete = {
-                                    viewModel.deleteStrategy(strategy.id)
-                                }
-                            )
+                when (val state = uiState) {
+                    is FocusListUiState.Loading -> {
+                        Box(
+                            modifier = Modifier.fillMaxSize(),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            CircularProgressIndicator()
                         }
                     }
-                }
 
-                is FocusListUiState.Error -> {
-                    ErrorCard(message = state.message)
+                    is FocusListUiState.Empty -> {
+                        EmptyStateCard()
+                    }
+
+                    is FocusListUiState.Success -> {
+                        LazyColumn(
+                            verticalArrangement = Arrangement.spacedBy(ComponentSpacing.smallSpacing)
+                        ) {
+                            items(state.strategies) { strategy ->
+                                FocusStrategyCard(
+                                    strategy = strategy,
+                                    onToggleActive = { isActive ->
+                                        viewModel.toggleStrategyActive(strategy.id, isActive)
+                                    },
+                                    onEdit = {
+                                        navController.navigate("focus_edit/${strategy.id}")
+                                    },
+                                    onDelete = {
+                                        viewModel.deleteStrategy(strategy.id)
+                                    }
+                                )
+                            }
+                        }
+                    }
+
+                    is FocusListUiState.Error -> {
+                        ErrorCard(message = state.message)
+                    }
                 }
             }
         }
@@ -98,12 +108,9 @@ fun FocusListScreen(
 
 @Composable
 private fun EmptyStateCard() {
-    Card(
+    FocusCard(
         modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(CornerRadius.large),
-        elevation = CardDefaults.cardElevation(
-            defaultElevation = 2.dp
-        )
+        shape = RoundedCornerShape(CornerRadius.large)
     ) {
         Column(
             modifier = Modifier
@@ -133,12 +140,11 @@ private fun EmptyStateCard() {
 
 @Composable
 private fun ErrorCard(message: String) {
-    Card(
+    FocusCard(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(CornerRadius.large),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.errorContainer
-        )
+        containerColor = MaterialTheme.colorScheme.errorContainer,
+        borderColor = MaterialTheme.colorScheme.error.copy(alpha = 0.4f)
     ) {
         Column(
             modifier = Modifier
@@ -170,14 +176,20 @@ private fun FocusStrategyCard(
 ) {
     var showDeleteDialog by remember { mutableStateOf(false) }
 
-    Card(
+    FocusCard(
         modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(CornerRadius.large),
         onClick = onEdit,
-        elevation = CardDefaults.cardElevation(
-            defaultElevation = 2.dp,
-            pressedElevation = 4.dp
-        )
+        shape = RoundedCornerShape(CornerRadius.large),
+        containerColor = if (strategy.isActive) {
+            MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.72f)
+        } else {
+            MaterialTheme.colorScheme.surface.copy(alpha = 0.94f)
+        },
+        borderColor = if (strategy.isActive) {
+            MaterialTheme.colorScheme.primary.copy(alpha = 0.45f)
+        } else {
+            MaterialTheme.colorScheme.outlineVariant
+        }
     ) {
         Column(modifier = Modifier.padding(ComponentSpacing.cardPadding)) {
             Row(
@@ -195,12 +207,20 @@ private fun FocusStrategyCard(
                     Text(
                         text = strategy.getRestrictionSummary(),
                         style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        color = if (strategy.isActive) {
+                            MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.9f)
+                        } else {
+                            MaterialTheme.colorScheme.onSurfaceVariant
+                        }
                     )
                     Text(
                         text = "${strategy.targetApps.size} 个应用被限制",
                         style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        color = if (strategy.isActive) {
+                            MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f)
+                        } else {
+                            MaterialTheme.colorScheme.onSurfaceVariant
+                        }
                     )
                 }
 
@@ -210,20 +230,33 @@ private fun FocusStrategyCard(
                 )
             }
 
-            if (strategy.isActive) {
-                Spacer(modifier = Modifier.height(ComponentSpacing.smallSpacing))
-                Surface(
-                    shape = RoundedCornerShape(CornerRadius.small),
-                    color = MaterialTheme.colorScheme.primaryContainer
-                ) {
-                    Text(
-                        text = "当前激活",
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.onPrimaryContainer,
-                        fontWeight = FontWeight.Bold,
-                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.End
+            ) {
+                IconButton(onClick = onEdit) {
+                    Icon(
+                        imageVector = Icons.Default.Edit,
+                        contentDescription = "编辑策略",
+                        tint = if (strategy.isActive) {
+                            MaterialTheme.colorScheme.onPrimaryContainer
+                        } else {
+                            MaterialTheme.colorScheme.onSurfaceVariant
+                        }
                     )
                 }
+                IconButton(onClick = { showDeleteDialog = true }) {
+                    Icon(
+                        imageVector = Icons.Default.Delete,
+                        contentDescription = "删除策略",
+                        tint = MaterialTheme.colorScheme.error
+                    )
+                }
+            }
+
+            if (strategy.isActive) {
+                Spacer(modifier = Modifier.height(ComponentSpacing.smallSpacing))
+                StatusPill(text = "当前激活")
             }
         }
     }

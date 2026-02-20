@@ -17,6 +17,9 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavController
 import com.example.umind.domain.model.*
+import com.example.umind.ui.components.FocusCard
+import com.example.umind.ui.components.ImmersiveBackground
+import com.example.umind.ui.components.ScreenHeader
 import java.time.DayOfWeek
 import java.time.LocalTime
 import kotlin.time.Duration.Companion.minutes
@@ -43,13 +46,19 @@ fun FocusEditScreen(
             }
     }
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .verticalScroll(rememberScrollState())
-            .padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp)
-    ) {
+    ImmersiveBackground {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .verticalScroll(rememberScrollState())
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            ScreenHeader(
+                title = "编辑专注策略",
+                subtitle = "设置规则后，系统将在目标时间自动拦截"
+            )
+
         // 策略名称
         OutlinedTextField(
             value = uiState.name,
@@ -61,8 +70,9 @@ fun FocusEditScreen(
         )
 
         // 选择要限制的应用
-        Card(
+        FocusCard(
             modifier = Modifier.fillMaxWidth(),
+            containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.92f),
             onClick = {
                 // 在导航前，将当前已选中的应用保存到 savedStateHandle
                 navController.currentBackStackEntry?.savedStateHandle?.set(
@@ -146,11 +156,10 @@ fun FocusEditScreen(
         )
 
         // 激活选项
-        Card(
+        FocusCard(
             modifier = Modifier.fillMaxWidth(),
-            colors = CardDefaults.cardColors(
-                containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f)
-            )
+            containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.38f),
+            borderColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.45f)
         ) {
             Row(
                 modifier = Modifier
@@ -211,6 +220,7 @@ fun FocusEditScreen(
                 }
             }
         }
+        }
     }
 }
 
@@ -222,11 +232,10 @@ fun TimeRestrictionsSection(
 ) {
     var showAddDialog by remember { mutableStateOf(false) }
 
-    Card(
+    FocusCard(
         modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
-        )
+        containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.75f),
+        borderColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.9f)
     ) {
         Column(
             modifier = Modifier.padding(16.dp),
@@ -265,11 +274,9 @@ fun TimeRestrictionsSection(
             // 显示已添加的时间限制
             if (restrictions.isNotEmpty()) {
                 restrictions.forEach { restriction ->
-                    Card(
+                    FocusCard(
                         modifier = Modifier.fillMaxWidth(),
-                        colors = CardDefaults.cardColors(
-                            containerColor = MaterialTheme.colorScheme.surface
-                        )
+                        containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.95f)
                     ) {
                         Row(
                             modifier = Modifier
@@ -493,11 +500,10 @@ fun UsageLimitsSection(
     var showDialog by remember { mutableStateOf(false) }
     var showIndividualDialog by remember { mutableStateOf(false) }
 
-    Card(
+    FocusCard(
         modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
-        )
+        containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.75f),
+        borderColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.9f)
     ) {
         Column(
             modifier = Modifier.padding(16.dp),
@@ -546,11 +552,9 @@ fun UsageLimitsSection(
 
             // 显示当前限制
             if (enabled && limits != null) {
-                Card(
+                FocusCard(
                     modifier = Modifier.fillMaxWidth(),
-                    colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.surface
-                    )
+                    containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.95f)
                 ) {
                     Column(modifier = Modifier.padding(12.dp)) {
                         when (limits.type) {
@@ -767,11 +771,10 @@ fun OpenCountLimitsSection(
     var showDialog by remember { mutableStateOf(false) }
     var showIndividualDialog by remember { mutableStateOf(false) }
 
-    Card(
+    FocusCard(
         modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
-        )
+        containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.75f),
+        borderColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.9f)
     ) {
         Column(
             modifier = Modifier.padding(16.dp),
@@ -820,11 +823,9 @@ fun OpenCountLimitsSection(
 
             // 显示当前限制
             if (enabled && limits != null) {
-                Card(
+                FocusCard(
                     modifier = Modifier.fillMaxWidth(),
-                    colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.surface
-                    )
+                    containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.95f)
                 ) {
                     Column(modifier = Modifier.padding(12.dp)) {
                         when (limits.type) {
@@ -999,11 +1000,10 @@ fun EnforcementModeSection(
     mode: EnforcementMode,
     onModeChange: (EnforcementMode) -> Unit
 ) {
-    Card(
+    FocusCard(
         modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
-        )
+        containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.75f),
+        borderColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.9f)
     ) {
         Column(
             modifier = Modifier.padding(16.dp),
@@ -1036,17 +1036,20 @@ fun EnforcementModeSection(
             // 模式选择
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 EnforcementMode.values().forEach { enforcementMode ->
-                    Card(
+                    FocusCard(
                         modifier = Modifier
                             .fillMaxWidth()
                             .clickable { onModeChange(enforcementMode) },
-                        colors = CardDefaults.cardColors(
-                            containerColor = if (mode == enforcementMode) {
-                                MaterialTheme.colorScheme.primaryContainer
-                            } else {
-                                MaterialTheme.colorScheme.surface
-                            }
-                        )
+                        containerColor = if (mode == enforcementMode) {
+                            MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.72f)
+                        } else {
+                            MaterialTheme.colorScheme.surface.copy(alpha = 0.95f)
+                        },
+                        borderColor = if (mode == enforcementMode) {
+                            MaterialTheme.colorScheme.primary.copy(alpha = 0.45f)
+                        } else {
+                            MaterialTheme.colorScheme.outlineVariant
+                        }
                     ) {
                         Row(
                             modifier = Modifier
@@ -1113,11 +1116,9 @@ fun IndividualUsageLimitsDialog(
                     )
                 } else {
                     selectedApps.forEach { packageName ->
-                        Card(
+                        FocusCard(
                             modifier = Modifier.fillMaxWidth(),
-                            colors = CardDefaults.cardColors(
-                                containerColor = MaterialTheme.colorScheme.surface
-                            )
+                            containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.95f)
                         ) {
                             Column(
                                 modifier = Modifier.padding(12.dp),
@@ -1227,11 +1228,9 @@ fun IndividualOpenCountLimitsDialog(
                     )
                 } else {
                     selectedApps.forEach { packageName ->
-                        Card(
+                        FocusCard(
                             modifier = Modifier.fillMaxWidth(),
-                            colors = CardDefaults.cardColors(
-                                containerColor = MaterialTheme.colorScheme.surface
-                            )
+                            containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.95f)
                         ) {
                             Column(
                                 modifier = Modifier.padding(12.dp),

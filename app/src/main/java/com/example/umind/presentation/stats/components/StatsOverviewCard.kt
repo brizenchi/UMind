@@ -9,6 +9,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.example.umind.presentation.stats.formatDuration
+import com.example.umind.ui.components.FocusCard
 
 /**
  * Overview card showing key statistics
@@ -20,12 +21,11 @@ fun StatsOverviewCard(
     totalBlockCount: Int,
     modifier: Modifier = Modifier
 ) {
-    Card(
+    FocusCard(
         modifier = modifier.fillMaxWidth(),
         shape = RoundedCornerShape(16.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.primaryContainer
-        )
+        containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.72f),
+        borderColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.4f)
     ) {
         Row(
             modifier = Modifier
