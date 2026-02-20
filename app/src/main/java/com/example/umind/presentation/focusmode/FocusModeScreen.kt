@@ -1,7 +1,9 @@
 package com.example.umind.presentation.focusmode
 
+import android.graphics.Bitmap
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -16,7 +18,7 @@ import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.AccessTime
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -27,6 +29,7 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -155,7 +158,7 @@ fun PomoTab(
                 focusMode = focusMode,
                 modifier = Modifier.weight(1f)
             )
-            Spacer(modifier = Modifier.weight(0.3f))
+            Spacer(modifier = Modifier.weight(0.1f))
 
             // 停止按钮
             Button(
@@ -173,6 +176,8 @@ fun PomoTab(
                 Spacer(modifier = Modifier.width(8.dp))
                 Text("停止", style = MaterialTheme.typography.titleMedium)
             }
+
+            Spacer(modifier = Modifier.weight(0.2f))
         } else {
             // 显示预设时长按钮
             Spacer(modifier = Modifier.height(48.dp))
@@ -245,7 +250,7 @@ fun PomoTab(
             Spacer(modifier = Modifier.height(8.dp))
 
             Text(
-                text = "长按时长可修改",
+                text = "自定义时长",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -305,8 +310,7 @@ fun StopwatchTab(
         modifier = Modifier
             .fillMaxSize()
             .padding(16.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.SpaceBetween
+        horizontalAlignment = Alignment.CenterHorizontally
     ) {
         Spacer(modifier = Modifier.weight(0.3f))
 
@@ -316,7 +320,7 @@ fun StopwatchTab(
             modifier = Modifier.weight(1f)
         )
 
-        Spacer(modifier = Modifier.weight(0.3f))
+        Spacer(modifier = Modifier.weight(0.1f))
 
         // 控制按钮
         if (isActive) {
@@ -352,6 +356,8 @@ fun StopwatchTab(
                 Text("开始", style = MaterialTheme.typography.titleMedium)
             }
         }
+
+        Spacer(modifier = Modifier.weight(0.2f))
     }
 }
 
@@ -514,7 +520,6 @@ fun FocusModeSettingsDialog(
     val whitelistedApps by viewModel.whitelistedApps.collectAsState()
     val installedApps by viewModel.installedApps.collectAsState()
     val focusMode by viewModel.focusMode.collectAsState()
-    var showAppSelector by remember { mutableStateOf(false) }
 
     Dialog(onDismissRequest = onDismiss) {
         Card(
@@ -541,7 +546,7 @@ fun FocusModeSettingsDialog(
                     )
                     IconButton(onClick = onDismiss) {
                         Icon(
-                            imageVector = Icons.Default.Stop,
+                            imageVector = Icons.Default.Close,
                             contentDescription = "关闭"
                         )
                     }
@@ -555,63 +560,121 @@ fun FocusModeSettingsDialog(
 
                 Spacer(modifier = Modifier.height(ComponentSpacing.pagePadding))
 
-                // 添加按钮
-                Button(
-                    onClick = { showAppSelector = true },
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(CornerRadius.medium)
+                // 应用列表（直接显示所有应用，带复选框）
+                LazyColumn(
+                    modifier = Modifier.weight(1f),
+                    verticalArrangement = Arrangement.spacedBy(ComponentSpacing.smallSpacing)
                 ) {
-                    Icon(Icons.Default.Add, contentDescription = null)
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text("添加应用")
-                }
-
-                Spacer(modifier = Modifier.height(ComponentSpacing.pagePadding))
-
-                // 白名单列表
-                if (whitelistedApps.isEmpty()) {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .weight(1f),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text(
-                            text = "暂无白名单应用\n点击上方按钮添加",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                    items(installedApps, key = { it.packageName }) { app ->
+                        AppCheckboxItem(
+                            app = app,
+                            isChecked = focusMode.whitelistedApps.contains(app.packageName),
+                            onCheckedChange = { isChecked ->
+                                if (isChecked) {
+                                    viewModel.addToWhitelist(app.packageName)
+                                } else {
+                                    viewModel.removeFromWhitelist(app.packageName)
+                                }
+                            },
+                            onLoadIcon = { packageName ->
+                                viewModel.getIconForApp(packageName)
+                            }
                         )
-                    }
-                } else {
-                    LazyColumn(
-                        modifier = Modifier.weight(1f),
-                        verticalArrangement = Arrangement.spacedBy(ComponentSpacing.smallSpacing)
-                    ) {
-                        items(whitelistedApps, key = { it.packageName }) { app ->
-                            WhitelistAppItem(
-                                app = app,
-                                onRemove = { viewModel.removeFromWhitelist(app.packageName) }
-                            )
-                        }
                     }
                 }
             }
         }
     }
+}
 
-    // 应用选择对话框
-    if (showAppSelector) {
-        AppSelectorDialog(
-            apps = installedApps.filter { !focusMode.whitelistedApps.contains(it.packageName) },
-            onDismiss = { showAppSelector = false },
-            onAppSelected = { app ->
-                viewModel.addToWhitelist(app.packageName)
-                showAppSelector = false
-            },
-            onLoadIcon = { packageName ->
-                viewModel.getIconForApp(packageName)
+/**
+ * 应用复选框项
+ */
+@Composable
+fun AppCheckboxItem(
+    app: AppInfo,
+    isChecked: Boolean,
+    onCheckedChange: (Boolean) -> Unit,
+    onLoadIcon: ((String) -> Bitmap?)? = null
+) {
+    // Track icon loading state
+    var icon by remember(app.packageName) { mutableStateOf(app.icon) }
+
+    // Load icon on-demand when item is displayed
+    LaunchedEffect(app.packageName) {
+        if (icon == null && onLoadIcon != null) {
+            val loadedIcon = onLoadIcon(app.packageName)
+            if (loadedIcon != null) {
+                icon = loadedIcon
             }
+        }
+    }
+
+    // Update icon when app changes
+    LaunchedEffect(app.icon) {
+        if (app.icon != null) {
+            icon = app.icon
+        }
+    }
+
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(CornerRadius.medium),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceVariant
         )
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable { onCheckedChange(!isChecked) }
+                .padding(ComponentSpacing.pagePadding),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            // Show icon if available, otherwise show placeholder
+            if (icon != null) {
+                androidx.compose.foundation.Image(
+                    bitmap = icon!!.asImageBitmap(),
+                    contentDescription = null,
+                    modifier = Modifier.size(48.dp)
+                )
+            } else {
+                Box(
+                    modifier = Modifier
+                        .size(48.dp)
+                        .background(
+                            MaterialTheme.colorScheme.surface,
+                            shape = RoundedCornerShape(8.dp)
+                        ),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = app.label.firstOrNull()?.uppercase() ?: "?",
+                        style = MaterialTheme.typography.titleMedium,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                }
+            }
+
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = app.label,
+                    style = MaterialTheme.typography.bodyLarge,
+                    fontWeight = FontWeight.Medium
+                )
+                Text(
+                    text = app.packageName,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+
+            Checkbox(
+                checked = isChecked,
+                onCheckedChange = onCheckedChange
+            )
+        }
     }
 }
 

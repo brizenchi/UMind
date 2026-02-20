@@ -232,9 +232,13 @@ fun MainScreen() {
             }
             composable("app_selection") { backStackEntry ->
                 val previousBackStackEntry = navController.previousBackStackEntry
+                // 从上一个页面获取当前已选中的应用
+                val currentSelectedPackages = previousBackStackEntry?.savedStateHandle
+                    ?.get<Set<String>>("current_selected_packages") ?: emptySet()
+
                 AppSelectionScreen(
                     navController = navController,
-                    initialSelectedPackages = emptySet(), // 从 savedStateHandle 获取
+                    initialSelectedPackages = currentSelectedPackages,
                     onAppsSelected = { selectedPackages ->
                         // 将选中的应用保存到 savedStateHandle
                         previousBackStackEntry?.savedStateHandle?.set(

@@ -63,7 +63,14 @@ fun FocusEditScreen(
         // 选择要限制的应用
         Card(
             modifier = Modifier.fillMaxWidth(),
-            onClick = { navController.navigate("app_selection") }
+            onClick = {
+                // 在导航前，将当前已选中的应用保存到 savedStateHandle
+                navController.currentBackStackEntry?.savedStateHandle?.set(
+                    "current_selected_packages",
+                    uiState.selectedPackages
+                )
+                navController.navigate("app_selection")
+            }
         ) {
             Row(
                 modifier = Modifier

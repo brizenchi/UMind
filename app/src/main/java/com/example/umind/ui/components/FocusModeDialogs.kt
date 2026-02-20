@@ -60,36 +60,36 @@ fun CountdownSelectorDialog(
                 )
 
                 // 快速选择
-                Column(verticalArrangement = Arrangement.spacedBy(ComponentSpacing.smallSpacing)) {
-                    Text(
-                        text = "快速选择",
-                        style = MaterialTheme.typography.labelLarge,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
+                // Column(verticalArrangement = Arrangement.spacedBy(ComponentSpacing.smallSpacing)) {
+                //     Text(
+                //         text = "快速选择",
+                //         style = MaterialTheme.typography.labelLarge,
+                //         color = MaterialTheme.colorScheme.onSurfaceVariant
+                //     )
 
-                    presetDurations.chunked(3).forEach { row ->
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(ComponentSpacing.smallSpacing)
-                        ) {
-                            row.forEach { minutes ->
-                                FilterChip(
-                                    selected = !useCustomTime && selectedMinutes == minutes,
-                                    onClick = {
-                                        useCustomTime = false
-                                        selectedMinutes = minutes
-                                    },
-                                    label = { Text("${minutes}分钟") },
-                                    modifier = Modifier.weight(1f)
-                                )
-                            }
-                            // 填充空白
-                            repeat(3 - row.size) {
-                                Spacer(modifier = Modifier.weight(1f))
-                            }
-                        }
-                    }
-                }
+                //     presetDurations.chunked(3).forEach { row ->
+                //         Row(
+                //             modifier = Modifier.fillMaxWidth(),
+                //             horizontalArrangement = Arrangement.spacedBy(ComponentSpacing.smallSpacing)
+                //         ) {
+                //             row.forEach { minutes ->
+                //                 FilterChip(
+                //                     selected = !useCustomTime && selectedMinutes == minutes,
+                //                     onClick = {
+                //                         useCustomTime = false
+                //                         selectedMinutes = minutes
+                //                     },
+                //                     label = { Text("${minutes}分钟") },
+                //                     modifier = Modifier.weight(1f)
+                //                 )
+                //             }
+                //             // 填充空白
+                //             repeat(3 - row.size) {
+                //                 Spacer(modifier = Modifier.weight(1f))
+                //             }
+                //         }
+                //     }
+                // }
 
                 HorizontalDivider()
 
@@ -168,15 +168,18 @@ fun CountdownSelectorDialog(
 }
 
 /**
- * 应用选择对话框 - 现代化版本
+ * 应用选择对话框 - 现代化版本（支持多选）
  */
 @Composable
 fun AppSelectorDialog(
     apps: List<AppInfo>,
+    selectedApps: Set<String>,
     onDismiss: () -> Unit,
-    onAppSelected: (AppInfo) -> Unit,
+    onConfirm: (Set<String>) -> Unit,
     onLoadIcon: ((String) -> Bitmap?)? = null
 ) {
+    var currentSelection by remember { mutableStateOf(selectedApps) }
+
     Dialog(onDismissRequest = onDismiss) {
         Card(
             modifier = Modifier
@@ -211,7 +214,14 @@ fun AppSelectorDialog(
                     items(apps, key = { it.packageName }) { app ->
                         AppSelectorItem(
                             app = app,
-                            onClick = { onAppSelected(app) },
+                            isSelected = currentSelection.contains(app.packageName),
+                            onToggle = {
+                                currentSelection = if (currentSelection.contains(app.packageName)) {
+                                    currentSelection - app.packageName
+                                } else {
+                                    currentSelection + app.packageName
+                                }
+                            },
                             onLoadIcon = onLoadIcon
                         )
                     }
@@ -219,13 +229,26 @@ fun AppSelectorDialog(
 
                 Spacer(modifier = Modifier.height(ComponentSpacing.pagePadding))
 
-                // 取消按钮
-                OutlinedButton(
-                    onClick = onDismiss,
+                // 按钮组
+                Row(
                     modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(CornerRadius.medium)
+                    horizontalArrangement = Arrangement.spacedBy(ComponentSpacing.smallSpacing)
                 ) {
-                    Text("取消")
+                    OutlinedButton(
+                        onClick = onDismiss,
+                        modifier = Modifier.weight(1f),
+                        shape = RoundedCornerShape(CornerRadius.medium)
+                    ) {
+                        Text("取消")
+                    }
+
+                    Button(
+                        onClick = { onConfirm(currentSelection) },
+                        modifier = Modifier.weight(1f),
+                        shape = RoundedCornerShape(CornerRadius.medium)
+                    ) {
+                        Text("确定")
+                    }
                 }
             }
         }
@@ -235,7 +258,8 @@ fun AppSelectorDialog(
 @Composable
 private fun AppSelectorItem(
     app: AppInfo,
-    onClick: () -> Unit,
+    isSelected: Boolean,
+    onToggle: () -> Unit,
     onLoadIcon: ((String) -> Bitmap?)? = null
 ) {
     // Track icon loading state
@@ -260,7 +284,7 @@ private fun AppSelectorItem(
     }
 
     Surface(
-        onClick = onClick,
+        onClick = onToggle,
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(CornerRadius.medium),
         color = MaterialTheme.colorScheme.surfaceVariant
@@ -296,7 +320,7 @@ private fun AppSelectorItem(
                 }
             }
 
-            Column {
+            Column(modifier = Modifier.weight(1f)) {
                 Text(
                     text = app.label,
                     style = MaterialTheme.typography.bodyLarge,
@@ -308,6 +332,11 @@ private fun AppSelectorItem(
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
+
+            Checkbox(
+                checked = isSelected,
+                onCheckedChange = { onToggle() }
+            )
         }
     }
 }
