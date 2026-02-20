@@ -1,0 +1,344 @@
+package com.example.umind.presentation.focusmode
+
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.AccessTime
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.hilt.navigation.compose.hiltViewModel
+import com.example.umind.domain.model.AppInfo
+import com.example.umind.domain.model.FocusModeType
+import com.example.umind.domain.model.TimeRestriction
+import com.example.umind.ui.components.CountdownSelectorDialog
+import com.example.umind.ui.components.AppSelectorDialog
+import com.example.umind.ui.theme.ComponentSpacing
+import com.example.umind.ui.theme.CornerRadius
+import java.time.DayOfWeek
+import java.time.LocalTime
+
+/**
+ * Focus Mode Screen - Whitelist-based blocking with time controls
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun FocusModeScreen(
+    viewModel: FocusModeViewModel = hiltViewModel()
+) {
+    val focusMode by viewModel.focusMode.collectAsState()
+    val whitelistedApps by viewModel.whitelistedApps.collectAsState()
+    val installedApps by viewModel.installedApps.collectAsState()
+
+    var showAppSelector by remember { mutableStateOf(false) }
+    var showCountdownSelector by remember { mutableStateOf(false) }
+
+    LazyColumn(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(ComponentSpacing.pagePadding),
+        verticalArrangement = Arrangement.spacedBy(ComponentSpacing.componentSpacing)
+    ) {
+        // Main Focus Mode Card
+        item {
+            FocusModeMainCard(
+                focusMode = focusMode,
+                onStartManual = { viewModel.toggleFocusMode(true) },
+                onStartCountdown = { showCountdownSelector = true },
+                onStop = { viewModel.stopFocusMode() }
+            )
+        }
+
+        // Whitelist Section
+        item {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "允许的应用 (${whitelistedApps.size})",
+                    style = MaterialTheme.typography.titleMedium
+                )
+                FilledTonalButton(
+                    onClick = { showAppSelector = true }
+                ) {
+                    Icon(Icons.Default.Add, contentDescription = null)
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text("添加")
+                }
+            }
+        }
+
+        if (whitelistedApps.isEmpty()) {
+            item {
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(CornerRadius.large)
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(32.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = "暂无允许的应用\n点击上方按钮添加",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+            }
+        } else {
+            items(whitelistedApps, key = { it.packageName }) { app ->
+                WhitelistAppItem(
+                    app = app,
+                    onRemove = { viewModel.removeFromWhitelist(app.packageName) }
+                )
+            }
+        }
+    }
+
+    // Dialogs
+    if (showAppSelector) {
+        AppSelectorDialog(
+            apps = installedApps.filter { !focusMode.whitelistedApps.contains(it.packageName) },
+            onDismiss = { showAppSelector = false },
+            onAppSelected = { app ->
+                viewModel.addToWhitelist(app.packageName)
+                showAppSelector = false
+            }
+        )
+    }
+
+    // Dialogs
+    if (showCountdownSelector) {
+        CountdownSelectorDialog(
+            onDismiss = { showCountdownSelector = false },
+            onConfirm = { minutes ->
+                viewModel.startCountdown(minutes)
+                showCountdownSelector = false
+            }
+        )
+    }
+}
+
+/**
+ * Main Focus Mode Card
+ * Shows timer when active, mode selection when inactive
+ */
+@Composable
+fun FocusModeMainCard(
+    focusMode: com.example.umind.domain.model.FocusMode,
+    onStartManual: () -> Unit,
+    onStartCountdown: () -> Unit,
+    onStop: () -> Unit
+) {
+    // Timer state that updates every second
+    var currentTime by remember { mutableStateOf(System.currentTimeMillis()) }
+
+    // Only update timer when focus mode is active to save resources
+    LaunchedEffect(focusMode.shouldBeActive()) {
+        if (focusMode.shouldBeActive()) {
+            while (true) {
+                currentTime = System.currentTimeMillis()
+                kotlinx.coroutines.delay(1000)
+            }
+        }
+    }
+
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(CornerRadius.large),
+        elevation = CardDefaults.cardElevation(
+            defaultElevation = 2.dp
+        ),
+        colors = CardDefaults.cardColors(
+            containerColor = if (focusMode.shouldBeActive()) {
+                MaterialTheme.colorScheme.primaryContainer
+            } else {
+                MaterialTheme.colorScheme.surfaceVariant
+            }
+        )
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(32.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Text(
+                text = "专注模式",
+                style = MaterialTheme.typography.headlineMedium
+            )
+
+            Spacer(modifier = Modifier.height(24.dp))
+
+            if (focusMode.shouldBeActive()) {
+                // Show large timer when active
+                when (focusMode.modeType) {
+                    FocusModeType.MANUAL -> {
+                        // Elapsed time (counting up)
+                        val elapsedMillis = currentTime - focusMode.updatedAt
+                        val hours = (elapsedMillis / 3600000).toInt()
+                        val minutes = ((elapsedMillis % 3600000) / 60000).toInt()
+                        val seconds = ((elapsedMillis % 60000) / 1000).toInt()
+
+                        Text(
+                            text = "已专注",
+                            style = MaterialTheme.typography.titleMedium,
+                            color = MaterialTheme.colorScheme.onPrimaryContainer,
+                            maxLines = 1
+                        )
+                        Spacer(modifier = Modifier.height(16.dp))
+                        Text(
+                            text = String.format("%02d:%02d:%02d", hours, minutes, seconds),
+                            style = MaterialTheme.typography.displayLarge.copy(
+                                fontSize = 64.sp,
+                                fontWeight = androidx.compose.ui.text.font.FontWeight.Bold
+                            ),
+                            color = MaterialTheme.colorScheme.primary,
+                            maxLines = 1,
+                            softWrap = false
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(
+                            text = "时分秒",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+
+                    FocusModeType.COUNTDOWN -> {
+                        // Remaining time (counting down)
+                        focusMode.countdownEndTime?.let { endTime ->
+                            val remainingMillis = (endTime - currentTime).coerceAtLeast(0)
+                            val hours = (remainingMillis / 3600000).toInt()
+                            val minutes = ((remainingMillis % 3600000) / 60000).toInt()
+                            val seconds = ((remainingMillis % 60000) / 1000).toInt()
+
+                            Text(
+                                text = "剩余",
+                                style = MaterialTheme.typography.titleMedium,
+                                color = MaterialTheme.colorScheme.onPrimaryContainer,
+                                maxLines = 1
+                            )
+                            Spacer(modifier = Modifier.height(16.dp))
+                            Text(
+                                text = String.format("%02d:%02d:%02d", hours, minutes, seconds),
+                                style = MaterialTheme.typography.displayLarge.copy(
+                                    fontSize = 64.sp,
+                                    fontWeight = androidx.compose.ui.text.font.FontWeight.Bold
+                                ),
+                                color = MaterialTheme.colorScheme.primary,
+                                maxLines = 1,
+                                softWrap = false
+                            )
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Text(
+                                text = "时分秒",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+
+                    FocusModeType.SCHEDULED -> {
+                        // Scheduled mode removed - do nothing
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(24.dp))
+
+                // Stop button
+                FilledTonalButton(
+                    onClick = onStop,
+                    modifier = Modifier.fillMaxWidth(0.6f)
+                ) {
+                    Text("停止专注", style = MaterialTheme.typography.titleMedium)
+                }
+            } else {
+                // Show mode selection buttons when not active
+                Text(
+                    text = "选择专注方式",
+                    style = MaterialTheme.typography.titleMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+
+                Spacer(modifier = Modifier.height(24.dp))
+
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    FilledTonalButton(
+                        onClick = onStartManual,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text("开始专注", style = MaterialTheme.typography.titleMedium)
+                    }
+
+                    FilledTonalButton(
+                        onClick = onStartCountdown,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Icon(Icons.Default.AccessTime, contentDescription = null)
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("计时专注", style = MaterialTheme.typography.titleMedium)
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun WhitelistAppItem(
+    app: AppInfo,
+    onRemove: () -> Unit
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(CornerRadius.medium),
+        elevation = CardDefaults.cardElevation(
+            defaultElevation = 1.dp
+        )
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(ComponentSpacing.pagePadding),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = app.label,
+                    style = MaterialTheme.typography.bodyLarge,
+                    fontWeight = FontWeight.Medium
+                )
+                Text(
+                    text = app.packageName,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            IconButton(onClick = onRemove) {
+                Icon(
+                    Icons.Default.Delete,
+                    contentDescription = "移除",
+                    tint = MaterialTheme.colorScheme.error
+                )
+            }
+        }
+    }
+}

@@ -133,12 +133,16 @@ class UsageTrackingRepository @Inject constructor(
      */
     suspend fun clearTodayRecords() {
         val today = LocalDate.now()
-        val records = usageRecordDao.getUsageRecordsForDate(today)
-        android.util.Log.d("UsageTrackingRepository", "Clearing ${records.size} records for today")
-        records.forEach { record ->
-            usageRecordDao.deleteRecordsForPackage(record.packageName)
-            android.util.Log.d("UsageTrackingRepository", "Deleted records for ${record.packageName}")
-        }
+        android.util.Log.d("UsageTrackingRepository", "Clearing records for today: $today")
+        usageRecordDao.deleteRecordsForDate(today)
+    }
+
+    /**
+     * Clear all usage records
+     */
+    suspend fun clearAllRecords() {
+        android.util.Log.d("UsageTrackingRepository", "Clearing all usage records")
+        usageRecordDao.deleteAllRecords()
     }
 
     /**

@@ -250,6 +250,13 @@ class UsageCountdownManager @Inject constructor(
     }
 
     /**
+     * 获取当前剩余时间（毫秒）- 别名方法
+     */
+    fun getRemainingMillis(packageName: String): Long {
+        return getRemainingTime(packageName) ?: 0
+    }
+
+    /**
      * 检查倒计时是否正在运行
      */
     fun isRunning(packageName: String): Boolean {

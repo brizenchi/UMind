@@ -16,6 +16,10 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavController
 import com.example.umind.domain.model.FocusStrategy
+import com.example.umind.ui.components.ModernDialog
+import com.example.umind.ui.theme.ComponentSpacing
+import com.example.umind.ui.theme.CornerRadius
+import com.example.umind.ui.theme.Spacing
 
 /**
  * 专注策略列表页面
@@ -40,8 +44,8 @@ fun FocusListScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(paddingValues)
-                .padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
+                .padding(ComponentSpacing.pagePadding),
+            verticalArrangement = Arrangement.spacedBy(ComponentSpacing.componentSpacing)
         ) {
             Text(
                 text = "专注策略",
@@ -65,7 +69,7 @@ fun FocusListScreen(
 
                 is FocusListUiState.Success -> {
                     LazyColumn(
-                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                        verticalArrangement = Arrangement.spacedBy(ComponentSpacing.smallSpacing)
                     ) {
                         items(state.strategies) { strategy ->
                             FocusStrategyCard(
@@ -96,20 +100,27 @@ fun FocusListScreen(
 private fun EmptyStateCard() {
     Card(
         modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(12.dp)
+        shape = RoundedCornerShape(CornerRadius.large),
+        elevation = CardDefaults.cardElevation(
+            defaultElevation = 2.dp
+        )
     ) {
         Column(
             modifier = Modifier
-                .padding(24.dp)
+                .padding(32.dp)
                 .fillMaxWidth(),
-            horizontalAlignment = Alignment.CenterHorizontally
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(ComponentSpacing.smallSpacing)
         ) {
             Text(
-                text = "还没有专注策略",
-                style = MaterialTheme.typography.bodyLarge,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+                text = "📝",
+                style = MaterialTheme.typography.displayMedium
             )
-            Spacer(modifier = Modifier.height(8.dp))
+            Text(
+                text = "还没有专注策略",
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.Bold
+            )
             Text(
                 text = "点击右下角的 + 号创建第一个专注策略",
                 style = MaterialTheme.typography.bodyMedium,
@@ -124,23 +135,23 @@ private fun EmptyStateCard() {
 private fun ErrorCard(message: String) {
     Card(
         modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(12.dp),
+        shape = RoundedCornerShape(CornerRadius.large),
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.errorContainer
         )
     ) {
         Column(
             modifier = Modifier
-                .padding(16.dp)
-                .fillMaxWidth()
+                .padding(ComponentSpacing.cardPadding)
+                .fillMaxWidth(),
+            verticalArrangement = Arrangement.spacedBy(ComponentSpacing.smallSpacing)
         ) {
             Text(
                 text = "错误",
-                style = MaterialTheme.typography.titleMedium,
+                style = MaterialTheme.typography.titleLarge,
                 fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.onErrorContainer
             )
-            Spacer(modifier = Modifier.height(4.dp))
             Text(
                 text = message,
                 style = MaterialTheme.typography.bodyMedium,
@@ -161,10 +172,14 @@ private fun FocusStrategyCard(
 
     Card(
         modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(12.dp),
-        onClick = onEdit
+        shape = RoundedCornerShape(CornerRadius.large),
+        onClick = onEdit,
+        elevation = CardDefaults.cardElevation(
+            defaultElevation = 2.dp,
+            pressedElevation = 4.dp
+        )
     ) {
-        Column(modifier = Modifier.padding(16.dp)) {
+        Column(modifier = Modifier.padding(ComponentSpacing.cardPadding)) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -173,9 +188,10 @@ private fun FocusStrategyCard(
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
                         text = strategy.name,
-                        style = MaterialTheme.typography.titleMedium,
+                        style = MaterialTheme.typography.titleLarge,
                         fontWeight = FontWeight.Bold
                     )
+                    Spacer(modifier = Modifier.height(Spacing.space4))
                     Text(
                         text = strategy.getRestrictionSummary(),
                         style = MaterialTheme.typography.bodyMedium,
@@ -195,37 +211,32 @@ private fun FocusStrategyCard(
             }
 
             if (strategy.isActive) {
-                Spacer(modifier = Modifier.height(8.dp))
-                Text(
-                    text = "● 当前激活",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.primary,
-                    fontWeight = FontWeight.Bold
-                )
+                Spacer(modifier = Modifier.height(ComponentSpacing.smallSpacing))
+                Surface(
+                    shape = RoundedCornerShape(CornerRadius.small),
+                    color = MaterialTheme.colorScheme.primaryContainer
+                ) {
+                    Text(
+                        text = "当前激活",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onPrimaryContainer,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                    )
+                }
             }
         }
     }
 
     if (showDeleteDialog) {
-        AlertDialog(
+        ModernDialog(
             onDismissRequest = { showDeleteDialog = false },
-            title = { Text("删除策略") },
-            text = { Text("确定要删除 \"${strategy.name}\" 吗？") },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        onDelete()
-                        showDeleteDialog = false
-                    }
-                ) {
-                    Text("删除")
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { showDeleteDialog = false }) {
-                    Text("取消")
-                }
-            }
+            title = "删除策略",
+            message = "确定要删除 \"${strategy.name}\" 吗？此操作无法撤销。",
+            confirmText = "删除",
+            dismissText = "取消",
+            onConfirm = onDelete,
+            isDangerous = true
         )
     }
 }

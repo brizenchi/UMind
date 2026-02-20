@@ -42,4 +42,10 @@ interface UsageRecordDao {
 
     @Query("SELECT * FROM usage_records WHERE date >= :startDate AND date <= :endDate ORDER BY date ASC")
     fun getUsageRecordsInRangeFlow(startDate: LocalDate, endDate: LocalDate): Flow<List<UsageRecordEntity>>
+
+    @Query("DELETE FROM usage_records")
+    suspend fun deleteAllRecords()
+
+    @Query("DELETE FROM usage_records WHERE date = :date")
+    suspend fun deleteRecordsForDate(date: LocalDate)
 }

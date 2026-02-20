@@ -214,6 +214,63 @@ fun SettingsScreen(
                 )
             }
         }
+
+        // 数据管理
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(16.dp)
+        ) {
+            Column(modifier = Modifier.padding(20.dp)) {
+                Text(
+                    text = "数据管理",
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold
+                )
+                Spacer(modifier = Modifier.height(16.dp))
+
+                var showClearDialog by remember { mutableStateOf(false) }
+
+                OutlinedButton(
+                    onClick = { showClearDialog = true },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("清除所有使用记录")
+                }
+
+                if (showClearDialog) {
+                    androidx.compose.material3.AlertDialog(
+                        onDismissRequest = { showClearDialog = false },
+                        title = { Text("确认清除") },
+                        text = { Text("确定要清除所有使用记录吗？此操作无法撤销。") },
+                        confirmButton = {
+                            TextButton(
+                                onClick = {
+                                    viewModel.clearAllRecords()
+                                    showClearDialog = false
+                                }
+                            ) {
+                                Text("确定", color = MaterialTheme.colorScheme.error)
+                            }
+                        },
+                        dismissButton = {
+                            TextButton(onClick = { showClearDialog = false }) {
+                                Text("取消")
+                            }
+                        }
+                    )
+                }
+
+                // 显示调试信息
+                if (uiState.debugMessage.isNotEmpty()) {
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        text = uiState.debugMessage,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+        }
     }
 }
 

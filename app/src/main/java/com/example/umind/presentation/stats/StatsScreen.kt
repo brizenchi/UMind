@@ -19,6 +19,8 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import com.example.umind.presentation.stats.components.AppUsageRankingList
 import com.example.umind.presentation.stats.components.StatsOverviewCard
 import com.example.umind.presentation.stats.components.UsageTrendChart
+import com.example.umind.ui.theme.ComponentSpacing
+import com.example.umind.ui.theme.CornerRadius
 
 /**
  * 统计页面
@@ -97,31 +99,41 @@ private fun PermissionRequiredContent(
     Column(
         modifier = modifier
             .fillMaxSize()
-            .padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp)
+            .padding(ComponentSpacing.pagePadding),
+        verticalArrangement = Arrangement.spacedBy(ComponentSpacing.componentSpacing)
     ) {
         Card(
             modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(12.dp)
+            shape = RoundedCornerShape(CornerRadius.large),
+            elevation = CardDefaults.cardElevation(
+                defaultElevation = 2.dp
+            )
         ) {
             Column(
-                modifier = Modifier.padding(16.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
+                modifier = Modifier.padding(ComponentSpacing.cardPadding),
+                verticalArrangement = Arrangement.spacedBy(ComponentSpacing.smallSpacing)
             ) {
                 Text(
+                    text = "📊",
+                    style = MaterialTheme.typography.displaySmall
+                )
+                Text(
                     text = "需要权限",
-                    style = MaterialTheme.typography.titleMedium,
+                    style = MaterialTheme.typography.titleLarge,
                     fontWeight = FontWeight.Bold
                 )
                 Text(
                     text = "需要开启\"使用情况访问\"权限以统计应用使用时长",
-                    style = MaterialTheme.typography.bodyMedium
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
+                Spacer(modifier = Modifier.height(ComponentSpacing.smallSpacing))
                 Button(
                     onClick = {
                         context.startActivity(Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS))
                     },
-                    modifier = Modifier.fillMaxWidth()
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(CornerRadius.medium)
                 ) {
                     Text("去开启")
                 }
@@ -160,8 +172,8 @@ private fun StatsContent(
                 modifier = modifier
                     .fillMaxSize()
                     .verticalScroll(rememberScrollState())
-                    .padding(16.dp),
-                verticalArrangement = Arrangement.spacedBy(16.dp)
+                    .padding(ComponentSpacing.pagePadding),
+                verticalArrangement = Arrangement.spacedBy(ComponentSpacing.componentSpacing)
             ) {
                 // Overview card
                 StatsOverviewCard(

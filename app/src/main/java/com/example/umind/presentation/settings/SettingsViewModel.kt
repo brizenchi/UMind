@@ -54,6 +54,24 @@ class SettingsViewModel @Inject constructor(
             }
         }
     }
+
+    fun clearAllRecords() {
+        viewModelScope.launch {
+            try {
+                usageTrackingRepository.clearAllRecords()
+                android.util.Log.d("SettingsViewModel", "Cleared all records")
+                _uiState.value = _uiState.value.copy(
+                    todayRecords = emptyList(),
+                    debugMessage = "所有记录已清除"
+                )
+            } catch (e: Exception) {
+                android.util.Log.e("SettingsViewModel", "Error clearing all records", e)
+                _uiState.value = _uiState.value.copy(
+                    debugMessage = "清除失败: ${e.message}"
+                )
+            }
+        }
+    }
 }
 
 data class SettingsUiState(

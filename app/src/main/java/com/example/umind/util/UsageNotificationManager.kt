@@ -10,15 +10,17 @@ import android.util.Log
 import androidx.core.app.NotificationCompat
 import com.example.umind.MainActivity
 import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
 import javax.inject.Inject
 import javax.inject.Singleton
 
 /**
- * 管理使用情况通知
- * 职责：
- * 1. 创建和更新通知
- * 2. 管理通知ID
- * 3. 格式化显示内容
+ * 管理使用情况通知 - 实时倒计时版本
+ * 参考 FocusModeNotificationManager 实现
  */
 @Singleton
 class UsageNotificationManager @Inject constructor(
@@ -27,8 +29,20 @@ class UsageNotificationManager @Inject constructor(
     private val notificationManager: NotificationManager =
         context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
 
-    private val activeNotifications = mutableMapOf<String, Int>() // packageName to notificationId
-    private var nextNotificationId = 1000
+    // 每个应用的更新任务
+    private val updateJobs = mutableMapOf<String, Job>()
+    // 每个应用的通知ID
+    private val notificationIds = mutableMapOf<String, Int>()
+    private var nextNotificationId = 3000
+
+    // 存储倒计时信息
+    private data class CountdownInfo(
+        val packageName: String,
+        val appName: String,
+        val targetEndTime: Long, // 目标结束时间
+        val remainingCount: Int? = null
+    )
+    private val countdownInfos = mutableMapOf<String, CountdownInfo>()
 
     companion object {
         private const val TAG = "UsageNotificationMgr"
@@ -48,10 +62,11 @@ class UsageNotificationManager @Inject constructor(
             val channel = NotificationChannel(
                 CHANNEL_ID,
                 CHANNEL_NAME,
-                NotificationManager.IMPORTANCE_HIGH
+                NotificationManager.IMPORTANCE_LOW // 低重要性，不会发出声音
             ).apply {
-                description = "显示应用使用时间和次数限制"
-                setShowBadge(true)
+                description = "显示应用使用时间和次数限制的实时倒计时"
+                setShowBadge(false)
+                enableLights(false)
                 enableVibration(false)
                 setSound(null, null)
             }
@@ -61,11 +76,79 @@ class UsageNotificationManager @Inject constructor(
     }
 
     /**
-     * 显示或更新使用情况通知
+     * 开始显示实时倒计时通知
+     * 完全参考 FocusModeNotificationManager 的实现
      * @param packageName 应用包名
      * @param appName 应用名称
      * @param remainingMillis 剩余时间（毫秒）
      * @param remainingCount 剩余次数
+     * @param scope 协程作用域
+     */
+    fun startCountdownNotification(
+        packageName: String,
+        appName: String,
+        remainingMillis: Long,
+        remainingCount: Int? = null,
+        scope: CoroutineScope
+    ) {
+        Log.d(TAG, "=== Starting countdown notification for $packageName ===")
+        Log.d(TAG, "remainingMillis: $remainingMillis, remainingCount: $remainingCount")
+
+        // 检查通知权限
+        if (!areNotificationsEnabled()) {
+            Log.e(TAG, "!!! Notifications are disabled !!!")
+            return
+        }
+
+        // 取消之前的更新任务
+        updateJobs[packageName]?.cancel()
+        Log.d(TAG, "Cancelled previous job for $packageName")
+
+        // 计算目标结束时间
+        val targetEndTime = System.currentTimeMillis() + remainingMillis
+
+        // 保存倒计时信息
+        countdownInfos[packageName] = CountdownInfo(
+            packageName = packageName,
+            appName = appName,
+            targetEndTime = targetEndTime,
+            remainingCount = remainingCount
+        )
+
+        // 获取或创建通知ID
+        val notificationId = notificationIds.getOrPut(packageName) {
+            nextNotificationId++
+        }
+        Log.d(TAG, "Using notification ID: $notificationId for $packageName")
+
+        // 启动新的更新任务 - 完全按照 FocusModeNotificationManager 的方式
+        updateJobs[packageName] = scope.launch {
+            Log.d(TAG, "Coroutine started for $packageName")
+            while (isActive) {
+                val now = System.currentTimeMillis()
+                val remaining = (targetEndTime - now).coerceAtLeast(0)
+
+                Log.d(TAG, "Updating notification for $packageName, remaining: ${remaining}ms")
+
+                // 先更新通知，再检查是否结束（和 FocusModeNotificationManager 一样）
+                updateNotification(packageName, appName, remaining, remainingCount, notificationId)
+
+                if (remaining <= 0) {
+                    // 时间用完，停止更新
+                    Log.d(TAG, "Time's up for $packageName, stopping notification updates")
+                    break
+                }
+
+                // 每秒更新一次
+                delay(1000)
+            }
+            Log.d(TAG, "Coroutine ended for $packageName")
+        }
+        Log.d(TAG, "=== Countdown notification started for $packageName ===")
+    }
+
+    /**
+     * 显示或更新使用情况通知（旧版本，保持兼容）
      */
     fun showOrUpdateNotification(
         packageName: String,
@@ -73,8 +156,7 @@ class UsageNotificationManager @Inject constructor(
         remainingMillis: Long? = null,
         remainingCount: Int? = null
     ) {
-        Log.d(TAG, "=== showOrUpdateNotification for $packageName ===")
-        Log.d(TAG, "remainingMillis: $remainingMillis, remainingCount: $remainingCount")
+        Log.d(TAG, "showOrUpdateNotification for $packageName (legacy method)")
 
         // 检查通知权限
         if (!areNotificationsEnabled()) {
@@ -83,7 +165,7 @@ class UsageNotificationManager @Inject constructor(
         }
 
         // 获取或创建通知ID
-        val notificationId = activeNotifications.getOrPut(packageName) {
+        val notificationId = notificationIds.getOrPut(packageName) {
             nextNotificationId++
         }
 
@@ -107,27 +189,111 @@ class UsageNotificationManager @Inject constructor(
             .setContentTitle("$appName 使用提醒")
             .setContentText(contentText)
             .setStyle(NotificationCompat.BigTextStyle().bigText(contentText))
-            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setPriority(NotificationCompat.PRIORITY_LOW)
             .setContentIntent(pendingIntent)
             .setOngoing(true) // 持久通知
             .setAutoCancel(false)
             .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
-            .setOnlyAlertOnce(true) // 只在首次显示时提醒，更新时不提醒
-            .setSound(null) // 不播放声音
-            .setDefaults(0) // 不使用默认设置（声音、震动等）
+            .setOnlyAlertOnce(true)
+            .setSound(null)
+            .setDefaults(0)
             .build()
 
         notificationManager.notify(notificationId, notification)
-        Log.d(TAG, "Notification shown/updated with ID: $notificationId")
+    }
+
+    /**
+     * 更新通知内容 - 完全参考 FocusModeNotificationManager
+     */
+    private fun updateNotification(
+        packageName: String,
+        appName: String,
+        remainingMillis: Long,
+        remainingCount: Int?,
+        notificationId: Int
+    ) {
+        Log.d(TAG, "updateNotification called for $packageName, remaining: ${remainingMillis}ms")
+
+        // 计算时间 - 和 FocusModeNotificationManager 一样的格式
+        val totalSeconds = (remainingMillis / 1000).coerceAtLeast(0)
+        val hours = totalSeconds / 3600
+        val minutes = (totalSeconds % 3600) / 60
+        val seconds = totalSeconds % 60
+
+        val timeText = when {
+            hours > 0 -> String.format("%02d:%02d:%02d", hours, minutes, seconds)
+            else -> String.format("%02d:%02d", minutes, seconds)
+        }
+
+        Log.d(TAG, "Time text: $timeText")
+
+        // 构建通知内容
+        val contentText = buildString {
+            append("⏱️ 剩余: $timeText")
+            remainingCount?.let { count ->
+                append("\n🔢 剩余次数: ${count}次")
+            }
+        }
+
+        // 创建点击通知时的Intent - 和 FocusModeNotificationManager 一样
+        val intent = Intent(context, MainActivity::class.java).apply {
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+        }
+        val pendingIntent = PendingIntent.getActivity(
+            context,
+            0,
+            intent,
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+        )
+
+        // 构建通知 - 完全按照 FocusModeNotificationManager 的方式
+        val notification = NotificationCompat.Builder(context, CHANNEL_ID)
+            .setSmallIcon(android.R.drawable.ic_dialog_info)
+            .setContentTitle("$appName 使用提醒")
+            .setContentText(contentText)
+            .setStyle(NotificationCompat.BigTextStyle().bigText(contentText))
+            .setPriority(NotificationCompat.PRIORITY_LOW)
+            .setContentIntent(pendingIntent)
+            .setOngoing(true) // 持久通知，不可滑动删除
+            .setAutoCancel(false)
+            .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
+            .setOnlyAlertOnce(true) // 只在首次显示时提醒
+            .setSound(null) // 不播放声音
+            .setDefaults(0) // 不使用默认设置
+            .build()
+
+        Log.d(TAG, "Showing notification with ID: $notificationId")
+        notificationManager.notify(notificationId, notification)
+        Log.d(TAG, "Notification shown successfully")
+    }
+
+    /**
+     * 暂停通知更新（但保持通知可见）
+     * 当应用切换到后台时调用
+     */
+    fun pauseNotification(packageName: String) {
+        Log.d(TAG, "Pausing notification updates for $packageName")
+        // 取消更新任务，但不取消通知本身
+        updateJobs[packageName]?.cancel()
+        updateJobs.remove(packageName)
+        Log.d(TAG, "Notification updates paused for $packageName")
     }
 
     /**
      * 取消通知
      */
     fun cancelNotification(packageName: String) {
-        activeNotifications[packageName]?.let { notificationId ->
+        // 取消更新任务
+        updateJobs[packageName]?.cancel()
+        updateJobs.remove(packageName)
+
+        // 移除倒计时信息
+        countdownInfos.remove(packageName)
+
+        // 取消通知
+        notificationIds[packageName]?.let { notificationId ->
             notificationManager.cancel(notificationId)
-            activeNotifications.remove(packageName)
+            notificationIds.remove(packageName)
             Log.d(TAG, "Notification cancelled for $packageName")
         }
     }
@@ -136,14 +302,24 @@ class UsageNotificationManager @Inject constructor(
      * 取消所有通知
      */
     fun cancelAllNotifications() {
-        activeNotifications.keys.toList().forEach { packageName ->
-            cancelNotification(packageName)
+        // 取消所有更新任务
+        updateJobs.values.forEach { it.cancel() }
+        updateJobs.clear()
+
+        // 清除倒计时信息
+        countdownInfos.clear()
+
+        // 取消所有通知
+        notificationIds.forEach { (_, notificationId) ->
+            notificationManager.cancel(notificationId)
         }
+        notificationIds.clear()
+
         Log.d(TAG, "All notifications cancelled")
     }
 
     /**
-     * 构建通知内容文本
+     * 构建通知内容文本（旧版本）
      */
     private fun buildContentText(remainingMillis: Long?, remainingCount: Int?): String {
         return buildString {

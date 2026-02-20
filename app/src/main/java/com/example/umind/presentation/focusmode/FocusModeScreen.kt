@@ -1,9 +1,19 @@
 package com.example.umind.presentation.focusmode
 
+import androidx.compose.animation.core.*
+import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Pause
+import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Stop
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.AccessTime
@@ -11,96 +21,585 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Dialog
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.example.umind.domain.model.AppInfo
 import com.example.umind.domain.model.FocusModeType
-import com.example.umind.domain.model.TimeRestriction
-import com.example.umind.ui.components.TimePickerDialog
-import java.time.DayOfWeek
-import java.time.LocalTime
+import com.example.umind.ui.components.CountdownSelectorDialog
+import com.example.umind.ui.components.AppSelectorDialog
+import com.example.umind.ui.theme.ComponentSpacing
+import com.example.umind.ui.theme.CornerRadius
 
 /**
- * Focus Mode Screen - Whitelist-based blocking with time controls
+ * 番茄钟风格的专注模式页面 - Google Clock 风格
  */
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun FocusModeScreen(
     viewModel: FocusModeViewModel = hiltViewModel()
 ) {
     val focusMode by viewModel.focusMode.collectAsState()
-    val whitelistedApps by viewModel.whitelistedApps.collectAsState()
-    val installedApps by viewModel.installedApps.collectAsState()
-
-    var showAppSelector by remember { mutableStateOf(false) }
+    var selectedTab by remember { mutableStateOf(0) } // 0: Pomo, 1: Stopwatch
     var showCountdownSelector by remember { mutableStateOf(false) }
+    var showSettings by remember { mutableStateOf(false) }
 
-    LazyColumn(
+    Column(
         modifier = Modifier
             .fillMaxSize()
-            .padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp)
+            .background(MaterialTheme.colorScheme.surface)
     ) {
-        // Main Focus Mode Card
-        item {
-            FocusModeMainCard(
-                focusMode = focusMode,
-                onStartManual = { viewModel.toggleFocusMode(true) },
-                onStartCountdown = { showCountdownSelector = true },
-                onStop = { viewModel.stopFocusMode() }
+        // 顶部标题栏
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 8.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = "Focus",
+                style = MaterialTheme.typography.titleMedium,
+                color = MaterialTheme.colorScheme.primary
+            )
+            IconButton(onClick = { showSettings = true }) {
+                Icon(
+                    imageVector = Icons.Default.Settings,
+                    contentDescription = "设置",
+                    tint = MaterialTheme.colorScheme.onSurface
+                )
+            }
+        }
+
+        // Tab 导航
+        TabRow(
+            selectedTabIndex = selectedTab,
+            containerColor = MaterialTheme.colorScheme.surface,
+            contentColor = MaterialTheme.colorScheme.primary
+        ) {
+            Tab(
+                selected = selectedTab == 0,
+                onClick = { selectedTab = 0 },
+                text = { Text("Pomo") }
+            )
+            Tab(
+                selected = selectedTab == 1,
+                onClick = { selectedTab = 1 },
+                text = { Text("Stopwatch") }
             )
         }
 
-        // Whitelist Section
-        item {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    text = "允许的应用 (${whitelistedApps.size})",
-                    style = MaterialTheme.typography.titleMedium
-                )
-                FilledTonalButton(
-                    onClick = { showAppSelector = true }
-                ) {
-                    Icon(Icons.Default.Add, contentDescription = null)
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Text("添加")
-                }
-            }
+        // 内容区域
+        when (selectedTab) {
+            0 -> PomoTab(
+                focusMode = focusMode,
+                viewModel = viewModel,
+                onShowCountdownSelector = { showCountdownSelector = true }
+            )
+            1 -> StopwatchTab(
+                focusMode = focusMode,
+                viewModel = viewModel
+            )
         }
+    }
 
-        if (whitelistedApps.isEmpty()) {
-            item {
-                Card(modifier = Modifier.fillMaxWidth()) {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(32.dp),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text(
-                            text = "暂无允许的应用\n点击上方按钮添加",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                }
+    // 对话框
+    if (showCountdownSelector) {
+        CountdownSelectorDialog(
+            onDismiss = { showCountdownSelector = false },
+            onConfirm = { minutes ->
+                viewModel.startCountdown(minutes)
+                showCountdownSelector = false
+            }
+        )
+    }
+
+    if (showSettings) {
+        FocusModeSettingsDialog(
+            viewModel = viewModel,
+            onDismiss = { showSettings = false }
+        )
+    }
+}
+
+/**
+ * Pomo Tab - 倒计时模式，带预设时长按钮
+ */
+@Composable
+fun PomoTab(
+    focusMode: com.example.umind.domain.model.FocusMode,
+    viewModel: FocusModeViewModel,
+    onShowCountdownSelector: () -> Unit
+) {
+    val isActive = focusMode.shouldBeActive() && focusMode.modeType == FocusModeType.COUNTDOWN
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(16.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        if (isActive) {
+            // 显示计时器
+            Spacer(modifier = Modifier.weight(0.3f))
+            PomodoroTimer(
+                focusMode = focusMode,
+                modifier = Modifier.weight(1f)
+            )
+            Spacer(modifier = Modifier.weight(0.3f))
+
+            // 停止按钮
+            Button(
+                onClick = { viewModel.stopFocusMode() },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(56.dp),
+                shape = RoundedCornerShape(28.dp),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = MaterialTheme.colorScheme.errorContainer,
+                    contentColor = MaterialTheme.colorScheme.onErrorContainer
+                )
+            ) {
+                Icon(Icons.Default.Stop, contentDescription = null)
+                Spacer(modifier = Modifier.width(8.dp))
+                Text("停止", style = MaterialTheme.typography.titleMedium)
             }
         } else {
-            items(whitelistedApps, key = { it.packageName }) { app ->
-                WhitelistAppItem(
-                    app = app,
-                    onRemove = { viewModel.removeFromWhitelist(app.packageName) }
+            // 显示预设时长按钮
+            Spacer(modifier = Modifier.height(48.dp))
+
+            Text(
+                text = "选择专注时长",
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.Medium,
+                modifier = Modifier.padding(bottom = 24.dp)
+            )
+
+            // 2x2 网格的预设时长按钮
+            Column(
+                verticalArrangement = Arrangement.spacedBy(16.dp),
+                modifier = Modifier.padding(horizontal = 24.dp)
+            ) {
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(16.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    PresetDurationButton(
+                        duration = "15:00",
+                        minutes = 15,
+                        onClick = { viewModel.startCountdown(15) },
+                        modifier = Modifier.weight(1f)
+                    )
+                    PresetDurationButton(
+                        duration = "25:00",
+                        minutes = 25,
+                        onClick = { viewModel.startCountdown(25) },
+                        modifier = Modifier.weight(1f)
+                    )
+                }
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(16.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    PresetDurationButton(
+                        duration = "40:00",
+                        minutes = 40,
+                        onClick = { viewModel.startCountdown(40) },
+                        modifier = Modifier.weight(1f)
+                    )
+                    PresetDurationButton(
+                        duration = "60:00",
+                        minutes = 60,
+                        onClick = { viewModel.startCountdown(60) },
+                        modifier = Modifier.weight(1f)
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(24.dp))
+
+            // 自定义时长按钮
+            OutlinedButton(
+                onClick = onShowCountdownSelector,
+                modifier = Modifier
+                    .size(64.dp),
+                shape = CircleShape,
+                contentPadding = PaddingValues(0.dp)
+            ) {
+                Icon(
+                    Icons.Default.Add,
+                    contentDescription = "自定义时长",
+                    modifier = Modifier.size(32.dp)
                 )
+            }
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            Text(
+                text = "长按时长可修改",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+
+            Spacer(modifier = Modifier.weight(1f))
+        }
+    }
+}
+
+/**
+ * 预设时长按钮
+ */
+@Composable
+fun PresetDurationButton(
+    duration: String,
+    minutes: Int,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Card(
+        onClick = onClick,
+        modifier = modifier
+            .aspectRatio(1f),
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceVariant
+        ),
+        elevation = CardDefaults.cardElevation(
+            defaultElevation = 2.dp
+        )
+    ) {
+        Box(
+            modifier = Modifier.fillMaxSize(),
+            contentAlignment = Alignment.Center
+        ) {
+            Text(
+                text = duration,
+                style = MaterialTheme.typography.headlineMedium,
+                fontWeight = FontWeight.Medium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+    }
+}
+
+/**
+ * Stopwatch Tab - 正计时模式
+ */
+@Composable
+fun StopwatchTab(
+    focusMode: com.example.umind.domain.model.FocusMode,
+    viewModel: FocusModeViewModel
+) {
+    val isActive = focusMode.shouldBeActive() && focusMode.modeType == FocusModeType.MANUAL
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(16.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.SpaceBetween
+    ) {
+        Spacer(modifier = Modifier.weight(0.3f))
+
+        // 计时器显示
+        PomodoroTimer(
+            focusMode = focusMode,
+            modifier = Modifier.weight(1f)
+        )
+
+        Spacer(modifier = Modifier.weight(0.3f))
+
+        // 控制按钮
+        if (isActive) {
+            Button(
+                onClick = { viewModel.stopFocusMode() },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(56.dp),
+                shape = RoundedCornerShape(28.dp),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = MaterialTheme.colorScheme.errorContainer,
+                    contentColor = MaterialTheme.colorScheme.onErrorContainer
+                )
+            ) {
+                Icon(Icons.Default.Stop, contentDescription = null)
+                Spacer(modifier = Modifier.width(8.dp))
+                Text("停止", style = MaterialTheme.typography.titleMedium)
+            }
+        } else {
+            Button(
+                onClick = { viewModel.toggleFocusMode(true) },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(56.dp),
+                shape = RoundedCornerShape(28.dp),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = MaterialTheme.colorScheme.primary,
+                    contentColor = MaterialTheme.colorScheme.onPrimary
+                )
+            ) {
+                Icon(Icons.Default.PlayArrow, contentDescription = null)
+                Spacer(modifier = Modifier.width(8.dp))
+                Text("开始", style = MaterialTheme.typography.titleMedium)
+            }
+        }
+    }
+}
+
+/**
+ * 番茄钟计时器 - 圆形进度显示
+ */
+@Composable
+fun PomodoroTimer(
+    focusMode: com.example.umind.domain.model.FocusMode,
+    modifier: Modifier = Modifier
+) {
+    var currentTime by remember { mutableStateOf(System.currentTimeMillis()) }
+
+    // 每秒更新时间
+    LaunchedEffect(focusMode.shouldBeActive()) {
+        if (focusMode.shouldBeActive()) {
+            while (true) {
+                currentTime = System.currentTimeMillis()
+                kotlinx.coroutines.delay(1000)
             }
         }
     }
 
-    // Dialogs
+    // 计算时间和进度
+    val (hours, minutes, seconds, progress) = when {
+        focusMode.shouldBeActive() -> {
+            when (focusMode.modeType) {
+                FocusModeType.MANUAL -> {
+                    val elapsedMillis = currentTime - focusMode.updatedAt
+                    val h = (elapsedMillis / 3600000).toInt()
+                    val m = ((elapsedMillis % 3600000) / 60000).toInt()
+                    val s = ((elapsedMillis % 60000) / 1000).toInt()
+                    Tuple4(h, m, s, 0f) // 手动模式没有进度
+                }
+                FocusModeType.COUNTDOWN -> {
+                    focusMode.countdownEndTime?.let { endTime ->
+                        val remainingMillis = (endTime - currentTime).coerceAtLeast(0)
+                        val totalMillis = (endTime - focusMode.updatedAt).coerceAtLeast(1)
+                        val h = (remainingMillis / 3600000).toInt()
+                        val m = ((remainingMillis % 3600000) / 60000).toInt()
+                        val s = ((remainingMillis % 60000) / 1000).toInt()
+                        val prog = 1f - (remainingMillis.toFloat() / totalMillis.toFloat())
+                        Tuple4(h, m, s, prog)
+                    } ?: Tuple4(0, 0, 0, 0f)
+                }
+                else -> Tuple4(0, 0, 0, 0f)
+            }
+        }
+        else -> Tuple4(0, 0, 0, 0f)
+    }
+
+    Box(
+        modifier = modifier.fillMaxWidth(),
+        contentAlignment = Alignment.Center
+    ) {
+        // 圆形进度指示器
+        CircularProgressIndicator(
+            hours = hours,
+            minutes = minutes,
+            seconds = seconds,
+            progress = progress,
+            isActive = focusMode.shouldBeActive(),
+            isCountdown = focusMode.modeType == FocusModeType.COUNTDOWN
+        )
+    }
+}
+
+/**
+ * 圆形进度指示器 - 简化版
+ */
+@Composable
+fun CircularProgressIndicator(
+    hours: Int,
+    minutes: Int,
+    seconds: Int,
+    progress: Float,
+    isActive: Boolean,
+    isCountdown: Boolean
+) {
+    val animatedProgress by animateFloatAsState(
+        targetValue = if (isCountdown) progress else 0f,
+        animationSpec = tween(durationMillis = 300)
+    )
+
+    Box(
+        contentAlignment = Alignment.Center,
+        modifier = Modifier.size(240.dp)
+    ) {
+        // 背景圆环
+        Canvas(modifier = Modifier.size(240.dp)) {
+            val strokeWidth = 8.dp.toPx()
+
+            // 背景圆
+            drawArc(
+                color = Color(0xFFE0E0E0),
+                startAngle = -90f,
+                sweepAngle = 360f,
+                useCenter = false,
+                style = Stroke(width = strokeWidth, cap = StrokeCap.Round),
+                size = Size(size.width - strokeWidth, size.height - strokeWidth),
+                topLeft = Offset(strokeWidth / 2, strokeWidth / 2)
+            )
+
+            // 进度圆弧（仅倒计时模式显示）
+            if (isCountdown && isActive && animatedProgress > 0f) {
+                drawArc(
+                    color = Color(0xFF6750A4),
+                    startAngle = -90f,
+                    sweepAngle = 360f * animatedProgress,
+                    useCenter = false,
+                    style = Stroke(width = strokeWidth, cap = StrokeCap.Round),
+                    size = Size(size.width - strokeWidth, size.height - strokeWidth),
+                    topLeft = Offset(strokeWidth / 2, strokeWidth / 2)
+                )
+            }
+        }
+
+        // 中心内容
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center
+        ) {
+            if (isActive) {
+                // 时间显示 - 更大更清晰
+                Text(
+                    text = if (hours > 0) {
+                        String.format("%02d:%02d:%02d", hours, minutes, seconds)
+                    } else {
+                        String.format("%02d:%02d", minutes, seconds)
+                    },
+                    style = MaterialTheme.typography.displayLarge.copy(
+                        fontSize = 56.sp,
+                        fontWeight = FontWeight.Normal
+                    ),
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+            } else {
+                // 未激活状态 - 显示 00:00
+                Text(
+                    text = "00:00",
+                    style = MaterialTheme.typography.displayLarge.copy(
+                        fontSize = 56.sp,
+                        fontWeight = FontWeight.Normal
+                    ),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
+                )
+            }
+        }
+    }
+}
+
+/**
+ * 设置对话框（包含白名单管理）
+ */
+@Composable
+fun FocusModeSettingsDialog(
+    viewModel: FocusModeViewModel,
+    onDismiss: () -> Unit
+) {
+    val whitelistedApps by viewModel.whitelistedApps.collectAsState()
+    val installedApps by viewModel.installedApps.collectAsState()
+    val focusMode by viewModel.focusMode.collectAsState()
+    var showAppSelector by remember { mutableStateOf(false) }
+
+    Dialog(onDismissRequest = onDismiss) {
+        Card(
+            modifier = Modifier
+                .fillMaxWidth()
+                .fillMaxHeight(0.85f),
+            shape = RoundedCornerShape(CornerRadius.extraLarge)
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(24.dp)
+            ) {
+                // 标题
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "白名单应用",
+                        style = MaterialTheme.typography.headlineSmall,
+                        fontWeight = FontWeight.Bold
+                    )
+                    IconButton(onClick = onDismiss) {
+                        Icon(
+                            imageVector = Icons.Default.Stop,
+                            contentDescription = "关闭"
+                        )
+                    }
+                }
+
+                Text(
+                    text = "专注模式下，只有白名单中的应用可以使用",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+
+                Spacer(modifier = Modifier.height(ComponentSpacing.pagePadding))
+
+                // 添加按钮
+                Button(
+                    onClick = { showAppSelector = true },
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(CornerRadius.medium)
+                ) {
+                    Icon(Icons.Default.Add, contentDescription = null)
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("添加应用")
+                }
+
+                Spacer(modifier = Modifier.height(ComponentSpacing.pagePadding))
+
+                // 白名单列表
+                if (whitelistedApps.isEmpty()) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .weight(1f),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = "暂无白名单应用\n点击上方按钮添加",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                } else {
+                    LazyColumn(
+                        modifier = Modifier.weight(1f),
+                        verticalArrangement = Arrangement.spacedBy(ComponentSpacing.smallSpacing)
+                    ) {
+                        items(whitelistedApps, key = { it.packageName }) { app ->
+                            WhitelistAppItem(
+                                app = app,
+                                onRemove = { viewModel.removeFromWhitelist(app.packageName) }
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // 应用选择对话框
     if (showAppSelector) {
         AppSelectorDialog(
             apps = installedApps.filter { !focusMode.whitelistedApps.contains(it.packageName) },
@@ -111,470 +610,35 @@ fun FocusModeScreen(
             }
         )
     }
-
-    // Dialogs
-    if (showCountdownSelector) {
-        CountdownSelectorDialog(
-            onDismiss = { showCountdownSelector = false },
-            onConfirm = { minutes ->
-                viewModel.startCountdown(minutes)
-                showCountdownSelector = false
-            }
-        )
-    }
 }
 
 /**
- * Main Focus Mode Card
- * Shows timer when active, mode selection when inactive
+ * 白名单应用项
  */
-@Composable
-fun FocusModeMainCard(
-    focusMode: com.example.umind.domain.model.FocusMode,
-    onStartManual: () -> Unit,
-    onStartCountdown: () -> Unit,
-    onStop: () -> Unit
-) {
-    // Timer state that updates every second
-    var currentTime by remember { mutableStateOf(System.currentTimeMillis()) }
-
-    // Only update timer when focus mode is active to save resources
-    LaunchedEffect(focusMode.shouldBeActive()) {
-        if (focusMode.shouldBeActive()) {
-            while (true) {
-                currentTime = System.currentTimeMillis()
-                kotlinx.coroutines.delay(1000)
-            }
-        }
-    }
-
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(
-            containerColor = if (focusMode.shouldBeActive()) {
-                MaterialTheme.colorScheme.primaryContainer
-            } else {
-                MaterialTheme.colorScheme.surfaceVariant
-            }
-        )
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(32.dp),
-            horizontalAlignment = Alignment.CenterHorizontally
-        ) {
-            Text(
-                text = "专注模式",
-                style = MaterialTheme.typography.headlineMedium
-            )
-
-            Spacer(modifier = Modifier.height(24.dp))
-
-            if (focusMode.shouldBeActive()) {
-                // Show large timer when active
-                when (focusMode.modeType) {
-                    FocusModeType.MANUAL -> {
-                        // Elapsed time (counting up)
-                        val elapsedMillis = currentTime - focusMode.updatedAt
-                        val hours = (elapsedMillis / 3600000).toInt()
-                        val minutes = ((elapsedMillis % 3600000) / 60000).toInt()
-                        val seconds = ((elapsedMillis % 60000) / 1000).toInt()
-
-                        Text(
-                            text = "已专注",
-                            style = MaterialTheme.typography.titleMedium,
-                            color = MaterialTheme.colorScheme.onPrimaryContainer,
-                            maxLines = 1
-                        )
-                        Spacer(modifier = Modifier.height(16.dp))
-                        Text(
-                            text = String.format("%02d:%02d:%02d", hours, minutes, seconds),
-                            style = MaterialTheme.typography.displayLarge.copy(
-                                fontSize = 64.sp,
-                                fontWeight = androidx.compose.ui.text.font.FontWeight.Bold
-                            ),
-                            color = MaterialTheme.colorScheme.primary,
-                            maxLines = 1,
-                            softWrap = false
-                        )
-                        Spacer(modifier = Modifier.height(8.dp))
-                        Text(
-                            text = "时分秒",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-
-                    FocusModeType.COUNTDOWN -> {
-                        // Remaining time (counting down)
-                        focusMode.countdownEndTime?.let { endTime ->
-                            val remainingMillis = (endTime - currentTime).coerceAtLeast(0)
-                            val hours = (remainingMillis / 3600000).toInt()
-                            val minutes = ((remainingMillis % 3600000) / 60000).toInt()
-                            val seconds = ((remainingMillis % 60000) / 1000).toInt()
-
-                            Text(
-                                text = "剩余",
-                                style = MaterialTheme.typography.titleMedium,
-                                color = MaterialTheme.colorScheme.onPrimaryContainer,
-                                maxLines = 1
-                            )
-                            Spacer(modifier = Modifier.height(16.dp))
-                            Text(
-                                text = String.format("%02d:%02d:%02d", hours, minutes, seconds),
-                                style = MaterialTheme.typography.displayLarge.copy(
-                                    fontSize = 64.sp,
-                                    fontWeight = androidx.compose.ui.text.font.FontWeight.Bold
-                                ),
-                                color = MaterialTheme.colorScheme.primary,
-                                maxLines = 1,
-                                softWrap = false
-                            )
-                            Spacer(modifier = Modifier.height(8.dp))
-                            Text(
-                                text = "时分秒",
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                    }
-
-                    FocusModeType.SCHEDULED -> {
-                        // Scheduled mode removed - do nothing
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(24.dp))
-
-                // Stop button
-                FilledTonalButton(
-                    onClick = onStop,
-                    modifier = Modifier.fillMaxWidth(0.6f)
-                ) {
-                    Text("停止专注", style = MaterialTheme.typography.titleMedium)
-                }
-            } else {
-                // Show mode selection buttons when not active
-                Text(
-                    text = "选择专注方式",
-                    style = MaterialTheme.typography.titleMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-
-                Spacer(modifier = Modifier.height(24.dp))
-
-                Column(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-                    FilledTonalButton(
-                        onClick = onStartManual,
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Text("开始专注", style = MaterialTheme.typography.titleMedium)
-                    }
-
-                    FilledTonalButton(
-                        onClick = onStartCountdown,
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Icon(Icons.Default.AccessTime, contentDescription = null)
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text("计时专注", style = MaterialTheme.typography.titleMedium)
-                    }
-                }
-            }
-        }
-    }
-}
-
-@Composable
-fun CountdownSelectorDialog(
-    onDismiss: () -> Unit,
-    onConfirm: (Int) -> Unit
-) {
-    var selectedMinutes by remember { mutableStateOf(30) }
-    var useCustomTime by remember { mutableStateOf(false) }
-    var customHours by remember { mutableStateOf(0) }
-    var customMinutes by remember { mutableStateOf(30) }
-    val presetDurations = listOf(15, 30, 45, 60, 90, 120)
-
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("选择专注时长") },
-        text = {
-            Column {
-                // Preset durations
-                Text(
-                    text = "快速选择",
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                Spacer(modifier = Modifier.height(8.dp))
-                presetDurations.chunked(3).forEach { row ->
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        row.forEach { minutes ->
-                            FilterChip(
-                                selected = !useCustomTime && selectedMinutes == minutes,
-                                onClick = {
-                                    useCustomTime = false
-                                    selectedMinutes = minutes
-                                },
-                                label = { Text("${minutes}分钟") },
-                                modifier = Modifier.weight(1f)
-                            )
-                        }
-                    }
-                    Spacer(modifier = Modifier.height(8.dp))
-                }
-
-                Spacer(modifier = Modifier.height(8.dp))
-                HorizontalDivider()
-                Spacer(modifier = Modifier.height(8.dp))
-
-                // Custom time input
-                Text(
-                    text = "自定义时长",
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                Spacer(modifier = Modifier.height(8.dp))
-
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    OutlinedTextField(
-                        value = customHours.toString(),
-                        onValueChange = {
-                            customHours = it.toIntOrNull()?.coerceIn(0, 23) ?: 0
-                            useCustomTime = true
-                        },
-                        label = { Text("小时") },
-                        modifier = Modifier.weight(1f),
-                        singleLine = true
-                    )
-                    Text(":")
-                    OutlinedTextField(
-                        value = customMinutes.toString(),
-                        onValueChange = {
-                            customMinutes = it.toIntOrNull()?.coerceIn(0, 59) ?: 0
-                            useCustomTime = true
-                        },
-                        label = { Text("分钟") },
-                        modifier = Modifier.weight(1f),
-                        singleLine = true
-                    )
-                }
-            }
-        },
-        confirmButton = {
-            TextButton(onClick = {
-                val totalMinutes = if (useCustomTime) {
-                    customHours * 60 + customMinutes
-                } else {
-                    selectedMinutes
-                }
-                if (totalMinutes > 0) {
-                    onConfirm(totalMinutes)
-                }
-            }) {
-                Text("开始专注")
-            }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text("取消")
-            }
-        }
-    )
-}
-
-/**
- * Dialog for managing scheduled focus time ranges
- * Allows adding and deleting time ranges
- */
-@Composable
-fun ScheduledTimeRangeEditorDialog(
-    initialRanges: List<TimeRestriction>,
-    onDismiss: () -> Unit,
-    onConfirm: (List<TimeRestriction>) -> Unit
-) {
-    var timeRanges by remember { mutableStateOf(initialRanges.toMutableList()) }
-    var showTimePicker by remember { mutableStateOf(false) }
-    var editingIndex by remember { mutableStateOf<Int?>(null) }
-
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("管理专注时段") },
-        text = {
-            Column {
-                if (timeRanges.isEmpty()) {
-                    Text("暂无时间段，点击下方按钮添加")
-                } else {
-                    timeRanges.forEachIndexed { index, range ->
-                        Card(
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(8.dp),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Text(
-                                    text = "${range.startTime} - ${range.endTime}",
-                                    style = MaterialTheme.typography.bodyMedium
-                                )
-                                IconButton(onClick = {
-                                    timeRanges = timeRanges.toMutableList().apply {
-                                        removeAt(index)
-                                    }
-                                }) {
-                                    Icon(Icons.Default.Delete, contentDescription = "删除")
-                                }
-                            }
-                        }
-                        Spacer(modifier = Modifier.height(4.dp))
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(8.dp))
-
-                FilledTonalButton(
-                    onClick = {
-                        editingIndex = null
-                        showTimePicker = true
-                    },
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Icon(Icons.Default.Add, contentDescription = null)
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Text("添加时间段")
-                }
-            }
-        },
-        confirmButton = {
-            TextButton(
-                onClick = { onConfirm(timeRanges) }
-            ) {
-                Text("确定")
-            }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text("取消")
-            }
-        }
-    )
-
-    if (showTimePicker) {
-        SimpleTimeRangePickerDialog(
-            onDismiss = { showTimePicker = false },
-            onConfirm = { startHour, startMinute, endHour, endMinute ->
-                val newRange = TimeRestriction(
-                    id = java.util.UUID.randomUUID().toString(),
-                    startTime = LocalTime.of(startHour, startMinute),
-                    endTime = LocalTime.of(endHour, endMinute),
-                    daysOfWeek = DayOfWeek.values().toSet()
-                )
-                timeRanges = timeRanges.toMutableList().apply { add(newRange) }
-                showTimePicker = false
-            }
-        )
-    }
-}
-
-@Composable
-fun SimpleTimeRangePickerDialog(
-    onDismiss: () -> Unit,
-    onConfirm: (Int, Int, Int, Int) -> Unit
-) {
-    var startHour by remember { mutableStateOf(9) }
-    var startMinute by remember { mutableStateOf(0) }
-    var endHour by remember { mutableStateOf(17) }
-    var endMinute by remember { mutableStateOf(0) }
-
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("选择时间范围") },
-        text = {
-            Column {
-                Text("开始时间: ${String.format("%02d:%02d", startHour, startMinute)}")
-                Row {
-                    OutlinedTextField(
-                        value = startHour.toString(),
-                        onValueChange = { startHour = it.toIntOrNull()?.coerceIn(0, 23) ?: startHour },
-                        label = { Text("时") },
-                        modifier = Modifier.weight(1f)
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    OutlinedTextField(
-                        value = startMinute.toString(),
-                        onValueChange = { startMinute = it.toIntOrNull()?.coerceIn(0, 59) ?: startMinute },
-                        label = { Text("分") },
-                        modifier = Modifier.weight(1f)
-                    )
-                }
-
-                Spacer(modifier = Modifier.height(16.dp))
-
-                Text("结束时间: ${String.format("%02d:%02d", endHour, endMinute)}")
-                Row {
-                    OutlinedTextField(
-                        value = endHour.toString(),
-                        onValueChange = { endHour = it.toIntOrNull()?.coerceIn(0, 23) ?: endHour },
-                        label = { Text("时") },
-                        modifier = Modifier.weight(1f)
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    OutlinedTextField(
-                        value = endMinute.toString(),
-                        onValueChange = { endMinute = it.toIntOrNull()?.coerceIn(0, 59) ?: endMinute },
-                        label = { Text("分") },
-                        modifier = Modifier.weight(1f)
-                    )
-                }
-            }
-        },
-        confirmButton = {
-            TextButton(onClick = { onConfirm(startHour, startMinute, endHour, endMinute) }) {
-                Text("确定")
-            }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text("取消")
-            }
-        }
-    )
-}
-
 @Composable
 fun WhitelistAppItem(
     app: AppInfo,
     onRemove: () -> Unit
 ) {
     Card(
-        modifier = Modifier.fillMaxWidth()
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(CornerRadius.medium),
+        elevation = CardDefaults.cardElevation(
+            defaultElevation = 1.dp
+        )
     ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(12.dp),
+                .padding(ComponentSpacing.pagePadding),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
             Column(modifier = Modifier.weight(1f)) {
                 Text(
                     text = app.label,
-                    style = MaterialTheme.typography.bodyLarge
+                    style = MaterialTheme.typography.bodyLarge,
+                    fontWeight = FontWeight.Medium
                 )
                 Text(
                     text = app.packageName,
@@ -593,34 +657,5 @@ fun WhitelistAppItem(
     }
 }
 
-@Composable
-fun AppSelectorDialog(
-    apps: List<AppInfo>,
-    onDismiss: () -> Unit,
-    onAppSelected: (AppInfo) -> Unit
-) {
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("选择应用") },
-        text = {
-            LazyColumn {
-                items(apps, key = { it.packageName }) { app ->
-                    TextButton(
-                        onClick = { onAppSelected(app) },
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Text(
-                            text = app.label,
-                            modifier = Modifier.fillMaxWidth()
-                        )
-                    }
-                }
-            }
-        },
-        confirmButton = {
-            TextButton(onClick = onDismiss) {
-                Text("取消")
-            }
-        }
-    )
-}
+// 辅助数据类
+private data class Tuple4<A, B, C, D>(val a: A, val b: B, val c: C, val d: D)
