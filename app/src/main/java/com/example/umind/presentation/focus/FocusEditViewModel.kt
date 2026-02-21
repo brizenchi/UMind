@@ -155,16 +155,6 @@ class FocusEditViewModel @Inject constructor(
         )
     }
 
-    fun setUsageLimitsIndividual(limits: Map<String, Duration>) {
-        _uiState.value = _uiState.value.copy(
-            usageLimits = UsageLimits(
-                type = LimitType.INDIVIDUAL,
-                individualLimits = limits
-            ),
-            hasUnsavedChanges = true
-        )
-    }
-
     // Open count limits
     fun updateOpenCountLimits(limits: OpenCountLimits?) {
         _uiState.value = _uiState.value.copy(
@@ -188,16 +178,6 @@ class FocusEditViewModel @Inject constructor(
             openCountLimits = OpenCountLimits(
                 type = LimitType.PER_APP,
                 perAppCount = count
-            ),
-            hasUnsavedChanges = true
-        )
-    }
-
-    fun setOpenCountLimitsIndividual(counts: Map<String, Int>) {
-        _uiState.value = _uiState.value.copy(
-            openCountLimits = OpenCountLimits(
-                type = LimitType.INDIVIDUAL,
-                individualCounts = counts
             ),
             hasUnsavedChanges = true
         )

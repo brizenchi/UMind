@@ -262,12 +262,6 @@ class FocusRepositoryImpl @Inject constructor(
                 val limit = usageLimits.perAppLimit ?: return false
                 appUsage >= limit.inWholeMilliseconds
             }
-            com.example.umind.domain.model.LimitType.INDIVIDUAL -> {
-                // Check individual limit for this app
-                val individualLimit = usageLimits.individualLimits[packageName] ?: return false
-                val appUsage = usageTrackingRepository.getUsageDuration(packageName, today)
-                appUsage >= individualLimit.inWholeMilliseconds
-            }
         }
     }
 
@@ -295,11 +289,11 @@ class FocusRepositoryImpl @Inject constructor(
                 val limit = openCountLimits.perAppCount ?: return false
                 appCount >= limit
             }
-            com.example.umind.domain.model.LimitType.INDIVIDUAL -> {
-                // Check individual limit for this app
-                val individualLimit = openCountLimits.individualCounts[packageName] ?: return false
+            com.example.umind.domain.model.LimitType.PER_APP -> {
+                // Check open count for this specific app
+                val limit = openCountLimits.perAppCount ?: return false
                 val appCount = usageTrackingRepository.getOpenCount(packageName, today)
-                appCount >= individualLimit
+                appCount >= limit
             }
         }
     }
@@ -395,11 +389,11 @@ class FocusRepositoryImpl @Inject constructor(
                             }
                         }
                     }
-                    com.example.umind.domain.model.LimitType.INDIVIDUAL -> {
-                        val individualLimit = usageLimits.individualLimits[packageName]
-                        if (individualLimit != null) {
+                    com.example.umind.domain.model.LimitType.PER_APP -> {
+                        val perAppLimit = usageLimits.perAppLimit
+                        if (perAppLimit != null) {
                             val appUsage = usageTrackingRepository.getUsageDuration(packageName, today)
-                            val limitMs = individualLimit.inWholeMilliseconds
+                            val limitMs = perAppLimit.inWholeMilliseconds
                             val usedMs = appUsage
                             val remainingMs = limitMs - usedMs
 
@@ -473,23 +467,23 @@ class FocusRepositoryImpl @Inject constructor(
                             }
                         }
                     }
-                    com.example.umind.domain.model.LimitType.INDIVIDUAL -> {
-                        val individualLimit = openCountLimits.individualCounts[packageName]
-                        if (individualLimit != null) {
+                    com.example.umind.domain.model.LimitType.PER_APP -> {
+                        val perAppLimit = openCountLimits.perAppCount
+                        if (perAppLimit != null) {
                             val appCount = usageTrackingRepository.getOpenCount(packageName, today)
-                            android.util.Log.d("FocusRepository", "App $packageName individual open count: $appCount, limit: $individualLimit")
-                            openCountLimit = individualLimit
+                            android.util.Log.d("FocusRepository", "App $packageName per-app open count: $appCount, limit: $perAppLimit")
+                            openCountLimit = perAppLimit
                             openCount = appCount
-                            remainingCount = if (individualLimit > appCount) individualLimit - appCount else 0
+                            remainingCount = if (perAppLimit > appCount) perAppLimit - appCount else 0
 
-                            if (appCount >= individualLimit) {
-                                android.util.Log.d("FocusRepository", "BLOCKING: App count $appCount >= limit $individualLimit")
+                            if (appCount >= perAppLimit) {
+                                android.util.Log.d("FocusRepository", "BLOCKING: App count $appCount >= limit $perAppLimit")
                                 reasons.add(com.example.umind.domain.model.BlockReason.OpenCountLimitExceeded(
-                                    limitCount = individualLimit,
+                                    limitCount = perAppLimit,
                                     usedCount = appCount
                                 ))
                             } else {
-                                android.util.Log.d("FocusRepository", "NOT BLOCKING: App count $appCount < limit $individualLimit, remaining: $remainingCount")
+                                android.util.Log.d("FocusRepository", "NOT BLOCKING: App count $appCount < limit $perAppLimit, remaining: $remainingCount")
                             }
                         }
                     }

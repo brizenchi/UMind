@@ -142,15 +142,13 @@ data class TimeRestrictionData(
 data class UsageLimitsData(
     val type: String, // LimitType name
     val totalLimitMinutes: Long?,
-    val perAppLimitMinutes: Long?,
-    val individualLimitsMinutes: Map<String, Long>
+    val perAppLimitMinutes: Long?
 ) {
     fun toDomainModel(): UsageLimits {
         return UsageLimits(
             type = LimitType.valueOf(type),
             totalLimit = totalLimitMinutes?.let { Duration.parse("${it}m") },
-            perAppLimit = perAppLimitMinutes?.let { Duration.parse("${it}m") },
-            individualLimits = individualLimitsMinutes.mapValues { Duration.parse("${it.value}m") }
+            perAppLimit = perAppLimitMinutes?.let { Duration.parse("${it}m") }
         )
     }
 
@@ -159,8 +157,7 @@ data class UsageLimitsData(
             return UsageLimitsData(
                 type = limits.type.name,
                 totalLimitMinutes = limits.totalLimit?.inWholeMinutes,
-                perAppLimitMinutes = limits.perAppLimit?.inWholeMinutes,
-                individualLimitsMinutes = limits.individualLimits.mapValues { it.value.inWholeMinutes }
+                perAppLimitMinutes = limits.perAppLimit?.inWholeMinutes
             )
         }
     }
@@ -170,15 +167,13 @@ data class UsageLimitsData(
 data class OpenCountLimitsData(
     val type: String, // LimitType name
     val totalCount: Int?,
-    val perAppCount: Int?,
-    val individualCounts: Map<String, Int>
+    val perAppCount: Int?
 ) {
     fun toDomainModel(): OpenCountLimits {
         return OpenCountLimits(
             type = LimitType.valueOf(type),
             totalCount = totalCount,
-            perAppCount = perAppCount,
-            individualCounts = individualCounts
+            perAppCount = perAppCount
         )
     }
 
@@ -187,8 +182,7 @@ data class OpenCountLimitsData(
             return OpenCountLimitsData(
                 type = limits.type.name,
                 totalCount = limits.totalCount,
-                perAppCount = limits.perAppCount,
-                individualCounts = limits.individualCounts
+                perAppCount = limits.perAppCount
             )
         }
     }

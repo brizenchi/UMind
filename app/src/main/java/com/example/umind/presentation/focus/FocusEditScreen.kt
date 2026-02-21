@@ -347,7 +347,9 @@ fun AddTimeRestrictionDialog(
             DayOfWeek.TUESDAY,
             DayOfWeek.WEDNESDAY,
             DayOfWeek.THURSDAY,
-            DayOfWeek.FRIDAY
+            DayOfWeek.FRIDAY,
+            DayOfWeek.SATURDAY,
+            DayOfWeek.SUNDAY
         ))
     }
     var startHour by remember { mutableStateOf(9) }
@@ -498,7 +500,6 @@ fun UsageLimitsSection(
 ) {
     var enabled by remember(limits) { mutableStateOf(limits != null) }
     var showDialog by remember { mutableStateOf(false) }
-    var showIndividualDialog by remember { mutableStateOf(false) }
 
     FocusCard(
         modifier = Modifier.fillMaxWidth(),
@@ -586,30 +587,12 @@ fun UsageLimitsSection(
                                     )
                                 }
                             }
-                            LimitType.INDIVIDUAL -> {
-                                Text(
-                                    text = "单独设置",
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    fontWeight = FontWeight.Medium
-                                )
-                                Text(
-                                    text = "${limits.individualLimits.size} 个应用已设置",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
                         }
                     }
                 }
 
                 TextButton(
-                    onClick = {
-                        if (limits.type == LimitType.INDIVIDUAL) {
-                            showIndividualDialog = true
-                        } else {
-                            showDialog = true
-                        }
-                    },
+                    onClick = { showDialog = true },
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Text("修改设置")
@@ -629,34 +612,8 @@ fun UsageLimitsSection(
                 when (type) {
                     LimitType.TOTAL_ALL -> onSetTotalAll(hours, minutes)
                     LimitType.PER_APP -> onSetPerApp(hours, minutes)
-                    LimitType.INDIVIDUAL -> {
-                        showDialog = false
-                        showIndividualDialog = true
-                    }
                 }
-                if (type != LimitType.INDIVIDUAL) {
-                    showDialog = false
-                }
-            }
-        )
-    }
-
-    if (showIndividualDialog) {
-        IndividualUsageLimitsDialog(
-            selectedApps = selectedApps,
-            currentLimits = limits?.individualLimits ?: emptyMap(),
-            onDismiss = {
-                showIndividualDialog = false
-                if (limits == null) enabled = false
-            },
-            onConfirm = { individualLimits ->
-                onUpdateLimits(
-                    UsageLimits(
-                        type = LimitType.INDIVIDUAL,
-                        individualLimits = individualLimits
-                    )
-                )
-                showIndividualDialog = false
+                showDialog = false
             }
         )
     }
@@ -691,34 +648,27 @@ fun UsageLimitsDialog(
                         onClick = { selectedType = LimitType.PER_APP },
                         label = "每个应用相同时长"
                     )
-                    RadioButton(
-                        selected = selectedType == LimitType.INDIVIDUAL,
-                        onClick = { selectedType = LimitType.INDIVIDUAL },
-                        label = "单独设置每个应用"
-                    )
                 }
 
-                if (selectedType != LimitType.INDIVIDUAL) {
-                    Text("时长设置：", style = MaterialTheme.typography.titleSmall)
-                    Row(
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        OutlinedTextField(
-                            value = hours.toString(),
-                            onValueChange = { it.toIntOrNull()?.let { h -> hours = h } },
-                            label = { Text("小时") },
-                            modifier = Modifier.weight(1f),
-                            singleLine = true
-                        )
-                        OutlinedTextField(
-                            value = minutes.toString(),
-                            onValueChange = { it.toIntOrNull()?.let { m -> minutes = m } },
-                            label = { Text("分钟") },
-                            modifier = Modifier.weight(1f),
-                            singleLine = true
-                        )
-                    }
+                Text("时长设置：", style = MaterialTheme.typography.titleSmall)
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    OutlinedTextField(
+                        value = hours.toString(),
+                        onValueChange = { it.toIntOrNull()?.let { h -> hours = h } },
+                        label = { Text("小时") },
+                        modifier = Modifier.weight(1f),
+                        singleLine = true
+                    )
+                    OutlinedTextField(
+                        value = minutes.toString(),
+                        onValueChange = { it.toIntOrNull()?.let { m -> minutes = m } },
+                        label = { Text("分钟") },
+                        modifier = Modifier.weight(1f),
+                        singleLine = true
+                    )
                 }
             }
         },
@@ -726,7 +676,7 @@ fun UsageLimitsDialog(
             TextButton(
                 onClick = { onConfirm(selectedType, hours, minutes) }
             ) {
-                Text(if (selectedType == LimitType.INDIVIDUAL) "下一步" else "确定")
+                Text("确定")
             }
         },
         dismissButton = {
@@ -769,7 +719,6 @@ fun OpenCountLimitsSection(
 ) {
     var enabled by remember(limits) { mutableStateOf(limits != null) }
     var showDialog by remember { mutableStateOf(false) }
-    var showIndividualDialog by remember { mutableStateOf(false) }
 
     FocusCard(
         modifier = Modifier.fillMaxWidth(),
@@ -857,30 +806,12 @@ fun OpenCountLimitsSection(
                                     )
                                 }
                             }
-                            LimitType.INDIVIDUAL -> {
-                                Text(
-                                    text = "单独设置",
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    fontWeight = FontWeight.Medium
-                                )
-                                Text(
-                                    text = "${limits.individualCounts.size} 个应用已设置",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
                         }
                     }
                 }
 
                 TextButton(
-                    onClick = {
-                        if (limits.type == LimitType.INDIVIDUAL) {
-                            showIndividualDialog = true
-                        } else {
-                            showDialog = true
-                        }
-                    },
+                    onClick = { showDialog = true },
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Text("修改设置")
@@ -900,34 +831,9 @@ fun OpenCountLimitsSection(
                 when (type) {
                     LimitType.TOTAL_ALL -> onSetTotalAll(count)
                     LimitType.PER_APP -> onSetPerApp(count)
-                    LimitType.INDIVIDUAL -> {
-                        showDialog = false
-                        showIndividualDialog = true
-                    }
                 }
-                if (type != LimitType.INDIVIDUAL) {
-                    showDialog = false
-                }
-            }
-        )
-    }
+                showDialog = false
 
-    if (showIndividualDialog) {
-        IndividualOpenCountLimitsDialog(
-            selectedApps = selectedApps,
-            currentLimits = limits?.individualCounts ?: emptyMap(),
-            onDismiss = {
-                showIndividualDialog = false
-                if (limits == null) enabled = false
-            },
-            onConfirm = { individualCounts ->
-                onUpdateLimits(
-                    OpenCountLimits(
-                        type = LimitType.INDIVIDUAL,
-                        individualCounts = individualCounts
-                    )
-                )
-                showIndividualDialog = false
             }
         )
     }
@@ -961,30 +867,23 @@ fun OpenCountLimitsDialog(
                         onClick = { selectedType = LimitType.PER_APP },
                         label = "每个应用相同次数"
                     )
-                    RadioButton(
-                        selected = selectedType == LimitType.INDIVIDUAL,
-                        onClick = { selectedType = LimitType.INDIVIDUAL },
-                        label = "单独设置每个应用"
-                    )
                 }
 
-                if (selectedType != LimitType.INDIVIDUAL) {
-                    Text("次数设置：", style = MaterialTheme.typography.titleSmall)
-                    OutlinedTextField(
-                        value = count.toString(),
-                        onValueChange = { it.toIntOrNull()?.let { c -> count = c } },
-                        label = { Text("次数") },
-                        modifier = Modifier.fillMaxWidth(),
-                        singleLine = true
-                    )
-                }
+                Text("次数设置：", style = MaterialTheme.typography.titleSmall)
+                OutlinedTextField(
+                    value = count.toString(),
+                    onValueChange = { it.toIntOrNull()?.let { c -> count = c } },
+                    label = { Text("次数") },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true
+                )
             }
         },
         confirmButton = {
             TextButton(
                 onClick = { onConfirm(selectedType, count) }
             ) {
-                Text(if (selectedType == LimitType.INDIVIDUAL) "下一步" else "确定")
+                Text("确定")
             }
         },
         dismissButton = {
@@ -1080,206 +979,4 @@ fun EnforcementModeSection(
             }
         }
     }
-}
-
-@Composable
-fun IndividualUsageLimitsDialog(
-    selectedApps: Set<String>,
-    currentLimits: Map<String, kotlin.time.Duration>,
-    onDismiss: () -> Unit,
-    onConfirm: (Map<String, kotlin.time.Duration>) -> Unit
-) {
-    var limits by remember {
-        mutableStateOf(
-            selectedApps.associateWith { pkg ->
-                currentLimits[pkg] ?: 30.minutes
-            }
-        )
-    }
-
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("单独设置每个应用时长") },
-        text = {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .heightIn(max = 400.dp)
-                    .verticalScroll(rememberScrollState()),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                if (selectedApps.isEmpty()) {
-                    Text(
-                        text = "请先选择要限制的应用",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.error
-                    )
-                } else {
-                    selectedApps.forEach { packageName ->
-                        FocusCard(
-                            modifier = Modifier.fillMaxWidth(),
-                            containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.95f)
-                        ) {
-                            Column(
-                                modifier = Modifier.padding(12.dp),
-                                verticalArrangement = Arrangement.spacedBy(8.dp)
-                            ) {
-                                Text(
-                                    text = packageName.substringAfterLast('.'),
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    fontWeight = FontWeight.Medium
-                                )
-                                Text(
-                                    text = packageName,
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-
-                                val currentLimit = limits[packageName] ?: 30.minutes
-                                var hours by remember {
-                                    mutableStateOf((currentLimit.inWholeMinutes / 60).toInt())
-                                }
-                                var minutes by remember {
-                                    mutableStateOf((currentLimit.inWholeMinutes % 60).toInt())
-                                }
-
-                                Row(
-                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    OutlinedTextField(
-                                        value = hours.toString(),
-                                        onValueChange = {
-                                            it.toIntOrNull()?.let { h ->
-                                                hours = h
-                                                limits = limits + (packageName to (h * 60 + minutes).minutes)
-                                            }
-                                        },
-                                        label = { Text("小时") },
-                                        modifier = Modifier.weight(1f),
-                                        singleLine = true
-                                    )
-                                    OutlinedTextField(
-                                        value = minutes.toString(),
-                                        onValueChange = {
-                                            it.toIntOrNull()?.let { m ->
-                                                minutes = m
-                                                limits = limits + (packageName to (hours * 60 + m).minutes)
-                                            }
-                                        },
-                                        label = { Text("分钟") },
-                                        modifier = Modifier.weight(1f),
-                                        singleLine = true
-                                    )
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        },
-        confirmButton = {
-            TextButton(
-                onClick = { onConfirm(limits) },
-                enabled = selectedApps.isNotEmpty()
-            ) {
-                Text("确定")
-            }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text("取消")
-            }
-        }
-    )
-}
-
-@Composable
-fun IndividualOpenCountLimitsDialog(
-    selectedApps: Set<String>,
-    currentLimits: Map<String, Int>,
-    onDismiss: () -> Unit,
-    onConfirm: (Map<String, Int>) -> Unit
-) {
-    var limits by remember {
-        mutableStateOf(
-            selectedApps.associateWith { pkg ->
-                currentLimits[pkg] ?: 5
-            }
-        )
-    }
-
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("单独设置每个应用次数") },
-        text = {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .heightIn(max = 400.dp)
-                    .verticalScroll(rememberScrollState()),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                if (selectedApps.isEmpty()) {
-                    Text(
-                        text = "请先选择要限制的应用",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.error
-                    )
-                } else {
-                    selectedApps.forEach { packageName ->
-                        FocusCard(
-                            modifier = Modifier.fillMaxWidth(),
-                            containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.95f)
-                        ) {
-                            Column(
-                                modifier = Modifier.padding(12.dp),
-                                verticalArrangement = Arrangement.spacedBy(8.dp)
-                            ) {
-                                Text(
-                                    text = packageName.substringAfterLast('.'),
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    fontWeight = FontWeight.Medium
-                                )
-                                Text(
-                                    text = packageName,
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-
-                                val currentLimit = limits[packageName] ?: 5
-                                var count by remember { mutableStateOf(currentLimit) }
-
-                                OutlinedTextField(
-                                    value = count.toString(),
-                                    onValueChange = {
-                                        it.toIntOrNull()?.let { c ->
-                                            count = c
-                                            limits = limits + (packageName to c)
-                                        }
-                                    },
-                                    label = { Text("每日打开次数") },
-                                    modifier = Modifier.fillMaxWidth(),
-                                    singleLine = true
-                                )
-                            }
-                        }
-                    }
-                }
-            }
-        },
-        confirmButton = {
-            TextButton(
-                onClick = { onConfirm(limits) },
-                enabled = selectedApps.isNotEmpty()
-            ) {
-                Text("确定")
-            }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text("取消")
-            }
-        }
-    )
 }
