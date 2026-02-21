@@ -21,9 +21,11 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.StrokeCap
@@ -52,7 +54,7 @@ fun FocusModeScreen(
     viewModel: FocusModeViewModel = hiltViewModel()
 ) {
     val focusMode by viewModel.focusMode.collectAsState()
-    var selectedTab by remember { mutableStateOf(0) } // 0: Pomo, 1: Stopwatch
+    var selectedTab by rememberSaveable { mutableStateOf(0) } // 0: Pomo, 1: Stopwatch
     var showCountdownSelector by remember { mutableStateOf(false) }
     var showSettings by remember { mutableStateOf(false) }
 
@@ -104,17 +106,34 @@ fun FocusModeScreen(
                 )
             }
 
-            // 内容区域
-            when (selectedTab) {
-                0 -> PomoTab(
-                    focusMode = focusMode,
-                    viewModel = viewModel,
-                    onShowCountdownSelector = { showCountdownSelector = true }
-                )
-                1 -> StopwatchTab(
-                    focusMode = focusMode,
-                    viewModel = viewModel
-                )
+            // 内容区域 - 两个 tab 都保持渲染，通过 alpha 控制显示（类似 ViewPager）
+            Box(modifier = Modifier.fillMaxSize()) {
+                // Pomo Tab - 始终渲染
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .alpha(if (selectedTab == 0) 1f else 0f)
+                ) {
+                    PomoTab(
+                        focusMode = focusMode,
+                        viewModel = viewModel,
+                        onShowCountdownSelector = { showCountdownSelector = true },
+                        isVisible = selectedTab == 0
+                    )
+                }
+
+                // Stopwatch Tab - 始终渲染
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .alpha(if (selectedTab == 1) 1f else 0f)
+                ) {
+                    StopwatchTab(
+                        focusMode = focusMode,
+                        viewModel = viewModel,
+                        isVisible = selectedTab == 1
+                    )
+                }
             }
         }
     }
@@ -145,7 +164,8 @@ fun FocusModeScreen(
 fun PomoTab(
     focusMode: com.example.umind.domain.model.FocusMode,
     viewModel: FocusModeViewModel,
-    onShowCountdownSelector: () -> Unit
+    onShowCountdownSelector: () -> Unit,
+    isVisible: Boolean = true
 ) {
     val isActive = focusMode.shouldBeActive() && focusMode.modeType == FocusModeType.COUNTDOWN
 
@@ -160,7 +180,8 @@ fun PomoTab(
             Spacer(modifier = Modifier.weight(0.3f))
             PomodoroTimer(
                 focusMode = focusMode,
-                modifier = Modifier.weight(1f)
+                modifier = Modifier.weight(1f),
+                isVisible = isVisible
             )
             Spacer(modifier = Modifier.weight(0.1f))
 
@@ -301,7 +322,8 @@ fun PresetDurationButton(
 @Composable
 fun StopwatchTab(
     focusMode: com.example.umind.domain.model.FocusMode,
-    viewModel: FocusModeViewModel
+    viewModel: FocusModeViewModel,
+    isVisible: Boolean = true
 ) {
     val isActive = focusMode.shouldBeActive() && focusMode.modeType == FocusModeType.MANUAL
 
@@ -316,7 +338,8 @@ fun StopwatchTab(
         // 计时器显示
         PomodoroTimer(
             focusMode = focusMode,
-            modifier = Modifier.weight(1f)
+            modifier = Modifier.weight(1f),
+            isVisible = isVisible
         )
 
         Spacer(modifier = Modifier.weight(0.1f))
@@ -366,13 +389,14 @@ fun StopwatchTab(
 @Composable
 fun PomodoroTimer(
     focusMode: com.example.umind.domain.model.FocusMode,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    isVisible: Boolean = true
 ) {
     var currentTime by remember { mutableStateOf(System.currentTimeMillis()) }
 
-    // 每秒更新时间
-    LaunchedEffect(focusMode.shouldBeActive()) {
-        if (focusMode.shouldBeActive()) {
+    // 只在可见且激活时更新时间
+    LaunchedEffect(focusMode.shouldBeActive(), isVisible) {
+        if (focusMode.shouldBeActive() && isVisible) {
             while (true) {
                 currentTime = System.currentTimeMillis()
                 kotlinx.coroutines.delay(1000)
@@ -521,6 +545,7 @@ fun FocusModeSettingsDialog(
     val whitelistedApps by viewModel.whitelistedApps.collectAsState()
     val installedApps by viewModel.installedApps.collectAsState()
     val focusMode by viewModel.focusMode.collectAsState()
+    val loadedIcons by viewModel.loadedIcons.collectAsState()
 
     Dialog(onDismissRequest = onDismiss) {
         FocusCard(
@@ -578,6 +603,7 @@ fun FocusModeSettingsDialog(
                                     viewModel.removeFromWhitelist(app.packageName)
                                 }
                             },
+                            loadedIcon = loadedIcons[app.packageName],
                             onLoadIcon = { packageName ->
                                 viewModel.getIconForApp(packageName)
                             }
@@ -597,25 +623,28 @@ fun AppCheckboxItem(
     app: AppInfo,
     isChecked: Boolean,
     onCheckedChange: (Boolean) -> Unit,
+    loadedIcon: Bitmap? = null,
     onLoadIcon: ((String) -> Bitmap?)? = null
 ) {
-    // Track icon loading state
-    var icon by remember(app.packageName) { mutableStateOf(app.icon) }
+    // Use the provided loaded icon or app's icon
+    var icon by remember(app.packageName, loadedIcon) {
+        mutableStateOf(loadedIcon ?: app.icon)
+    }
 
     // Load icon on-demand when item is displayed
     LaunchedEffect(app.packageName) {
         if (icon == null && onLoadIcon != null) {
-            val loadedIcon = onLoadIcon(app.packageName)
-            if (loadedIcon != null) {
-                icon = loadedIcon
+            val loaded = onLoadIcon(app.packageName)
+            if (loaded != null) {
+                icon = loaded
             }
         }
     }
 
-    // Update icon when app changes
-    LaunchedEffect(app.icon) {
-        if (app.icon != null) {
-            icon = app.icon
+    // Update icon when loadedIcon changes
+    LaunchedEffect(loadedIcon) {
+        if (loadedIcon != null) {
+            icon = loadedIcon
         }
     }
 

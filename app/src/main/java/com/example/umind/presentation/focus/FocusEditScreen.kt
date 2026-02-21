@@ -1,8 +1,10 @@
 package com.example.umind.presentation.focus
 
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -13,6 +15,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavController
@@ -419,33 +422,65 @@ fun DayOfWeekSelector(
     onDaysChange: (Set<DayOfWeek>) -> Unit
 ) {
     val days = listOf(
-        DayOfWeek.MONDAY to "一",
-        DayOfWeek.TUESDAY to "二",
-        DayOfWeek.WEDNESDAY to "三",
-        DayOfWeek.THURSDAY to "四",
-        DayOfWeek.FRIDAY to "五",
-        DayOfWeek.SATURDAY to "六",
-        DayOfWeek.SUNDAY to "日"
+        DayOfWeek.MONDAY to "M",
+        DayOfWeek.TUESDAY to "T",
+        DayOfWeek.WEDNESDAY to "W",
+        DayOfWeek.THURSDAY to "T",
+        DayOfWeek.FRIDAY to "F",
+        DayOfWeek.SATURDAY to "S",
+        DayOfWeek.SUNDAY to "S"
     )
 
     Row(
         modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.SpaceEvenly
+        horizontalArrangement = Arrangement.SpaceEvenly,
+        verticalAlignment = Alignment.CenterVertically
     ) {
         days.forEach { (day, label) ->
-            FilterChip(
-                selected = day in selectedDays,
-                onClick = {
-                    onDaysChange(
-                        if (day in selectedDays) {
-                            selectedDays - day
-                        } else {
-                            selectedDays + day
-                        }
-                    )
+            val isSelected = day in selectedDays
+            Surface(
+                modifier = Modifier
+                    .size(40.dp)
+                    .clickable {
+                        onDaysChange(
+                            if (day in selectedDays) {
+                                selectedDays - day
+                            } else {
+                                selectedDays + day
+                            }
+                        )
+                    },
+                shape = CircleShape,
+                color = if (isSelected) {
+                    MaterialTheme.colorScheme.primary
+                } else {
+                    MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
                 },
-                label = { Text(label) }
-            )
+                border = if (isSelected) {
+                    null
+                } else {
+                    androidx.compose.foundation.BorderStroke(
+                        1.dp,
+                        MaterialTheme.colorScheme.outline.copy(alpha = 0.3f)
+                    )
+                }
+            ) {
+                Box(
+                    contentAlignment = Alignment.Center,
+                    modifier = Modifier.fillMaxSize()
+                ) {
+                    Text(
+                        text = label,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = if (isSelected) {
+                            MaterialTheme.colorScheme.onPrimary
+                        } else {
+                            MaterialTheme.colorScheme.onSurfaceVariant
+                        },
+                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
+                    )
+                }
+            }
         }
     }
 }

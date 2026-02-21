@@ -195,9 +195,15 @@ fun MainScreen() {
                     ) {
                         NavigationBarItem(
                             selected = currentRoute == "daily_management",
-                            onClick = { navController.navigate("daily_management") {
-                                popUpTo("daily_management") { inclusive = true }
-                            }},
+                            onClick = {
+                                if (currentRoute != "daily_management") {
+                                    navController.navigate("daily_management") {
+                                        popUpTo("daily_management") { inclusive = true }
+                                        launchSingleTop = true
+                                        restoreState = true
+                                    }
+                                }
+                            },
                             colors = NavigationBarItemDefaults.colors(
                                 selectedIconColor = MaterialTheme.colorScheme.primary,
                                 selectedTextColor = MaterialTheme.colorScheme.primary,
@@ -210,9 +216,15 @@ fun MainScreen() {
                         )
                         NavigationBarItem(
                             selected = currentRoute == "focus_mode",
-                            onClick = { navController.navigate("focus_mode") {
-                                popUpTo("daily_management")
-                            }},
+                            onClick = {
+                                if (currentRoute != "focus_mode") {
+                                    navController.navigate("focus_mode") {
+                                        popUpTo("daily_management")
+                                        launchSingleTop = true
+                                        restoreState = true
+                                    }
+                                }
+                            },
                             colors = NavigationBarItemDefaults.colors(
                                 selectedIconColor = MaterialTheme.colorScheme.primary,
                                 selectedTextColor = MaterialTheme.colorScheme.primary,
@@ -225,9 +237,15 @@ fun MainScreen() {
                         )
                         NavigationBarItem(
                             selected = currentRoute == "stats",
-                            onClick = { navController.navigate("stats") {
-                                popUpTo("daily_management")
-                            }},
+                            onClick = {
+                                if (currentRoute != "stats") {
+                                    navController.navigate("stats") {
+                                        popUpTo("daily_management")
+                                        launchSingleTop = true
+                                        restoreState = true
+                                    }
+                                }
+                            },
                             colors = NavigationBarItemDefaults.colors(
                                 selectedIconColor = MaterialTheme.colorScheme.primary,
                                 selectedTextColor = MaterialTheme.colorScheme.primary,
@@ -240,9 +258,15 @@ fun MainScreen() {
                         )
                         NavigationBarItem(
                             selected = currentRoute == "settings",
-                            onClick = { navController.navigate("settings") {
-                                popUpTo("daily_management")
-                            }},
+                            onClick = {
+                                if (currentRoute != "settings") {
+                                    navController.navigate("settings") {
+                                        popUpTo("daily_management")
+                                        launchSingleTop = true
+                                        restoreState = true
+                                    }
+                                }
+                            },
                             colors = NavigationBarItemDefaults.colors(
                                 selectedIconColor = MaterialTheme.colorScheme.primary,
                                 selectedTextColor = MaterialTheme.colorScheme.primary,

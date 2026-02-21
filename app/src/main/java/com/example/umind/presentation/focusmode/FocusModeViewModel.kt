@@ -33,8 +33,9 @@ class FocusModeViewModel @Inject constructor(
     private val _installedApps = MutableStateFlow<List<AppInfo>>(emptyList())
     val installedApps: StateFlow<List<AppInfo>> = _installedApps.asStateFlow()
 
-    // Cache for loaded icons
-    private val loadedIcons = mutableMapOf<String, Bitmap?>()
+    // Cache for loaded icons - use StateFlow to avoid triggering list updates
+    private val _loadedIcons = MutableStateFlow<Map<String, Bitmap?>>(emptyMap())
+    val loadedIcons: StateFlow<Map<String, Bitmap?>> = _loadedIcons.asStateFlow()
 
     val focusMode: StateFlow<FocusMode> = focusModeRepository.getFocusMode()
         .stateIn(
@@ -124,7 +125,7 @@ class FocusModeViewModel @Inject constructor(
      */
     fun getIconForApp(packageName: String): Bitmap? {
         // Return cached icon if available
-        loadedIcons[packageName]?.let { return it }
+        _loadedIcons.value[packageName]?.let { return it }
 
         // Start loading asynchronously
         viewModelScope.launch {
@@ -140,21 +141,13 @@ class FocusModeViewModel @Inject constructor(
      */
     private suspend fun loadIconForApp(packageName: String): Bitmap? {
         // Return cached icon if available
-        loadedIcons[packageName]?.let { return it }
+        _loadedIcons.value[packageName]?.let { return it }
 
         // Load icon
         val icon = appIconLoader.loadIcon(packageName)
-        loadedIcons[packageName] = icon
 
-        // Update the app in the installed apps list with the loaded icon
-        val updatedApps = _installedApps.value.map { app ->
-            if (app.packageName == packageName) {
-                app.copy(icon = icon)
-            } else {
-                app
-            }
-        }
-        _installedApps.value = updatedApps
+        // Update only the icons map, not the entire list
+        _loadedIcons.value = _loadedIcons.value + (packageName to icon)
 
         return icon
     }
