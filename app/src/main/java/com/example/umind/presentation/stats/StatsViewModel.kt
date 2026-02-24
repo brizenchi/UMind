@@ -4,8 +4,10 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.umind.domain.model.DailyStats
 import com.example.umind.domain.model.UsageTrend
+import com.example.umind.domain.model.UsageTimelineEntry
 import com.example.umind.domain.usecase.GetDailyStatsUseCase
 import com.example.umind.domain.usecase.GetUsageTrendUseCase
+import com.example.umind.domain.usecase.GetUsageTimelineUseCase
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -17,7 +19,8 @@ import javax.inject.Inject
 @HiltViewModel
 class StatsViewModel @Inject constructor(
     private val getDailyStatsUseCase: GetDailyStatsUseCase,
-    private val getUsageTrendUseCase: GetUsageTrendUseCase
+    private val getUsageTrendUseCase: GetUsageTrendUseCase,
+    private val getUsageTimelineUseCase: GetUsageTimelineUseCase
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow<StatsUiState>(StatsUiState.Loading)
@@ -43,9 +46,13 @@ class StatsViewModel @Inject constructor(
                 val startDate = date.minusDays(6)
                 val trend = getUsageTrendUseCase(startDate, endDate)
 
+                // Load timeline
+                val timeline = getUsageTimelineUseCase(date)
+
                 _uiState.value = StatsUiState.Success(
                     dailyStats = dailyStats,
-                    weeklyTrend = trend
+                    weeklyTrend = trend,
+                    timeline = timeline
                 )
             } catch (e: Exception) {
                 _uiState.value = StatsUiState.Error(e.message ?: "Unknown error")
@@ -67,7 +74,8 @@ sealed class StatsUiState {
     object Loading : StatsUiState()
     data class Success(
         val dailyStats: DailyStats,
-        val weeklyTrend: List<UsageTrend>
+        val weeklyTrend: List<UsageTrend>,
+        val timeline: List<UsageTimelineEntry>
     ) : StatsUiState()
     data class Error(val message: String) : StatsUiState()
 }

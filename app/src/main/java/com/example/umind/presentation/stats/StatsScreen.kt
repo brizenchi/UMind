@@ -19,6 +19,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import com.example.umind.presentation.stats.components.AppUsageRankingList
 import com.example.umind.presentation.stats.components.StatsOverviewCard
 import com.example.umind.presentation.stats.components.UsageTrendChart
+import com.example.umind.presentation.stats.components.UsageTimelineCard
 import com.example.umind.ui.components.FocusCard
 import com.example.umind.ui.components.ImmersiveBackground
 import com.example.umind.ui.theme.ComponentSpacing
@@ -187,6 +188,11 @@ private fun StatsContent(
                     totalUsageDuration = uiState.dailyStats.totalUsageDurationMillis,
                     totalOpenCount = uiState.dailyStats.totalOpenCount,
                     totalBlockCount = uiState.dailyStats.totalBlockCount
+                )
+
+                // Timeline card
+                UsageTimelineCard(
+                    timelineEntries = uiState.timeline
                 )
 
                 // App usage ranking

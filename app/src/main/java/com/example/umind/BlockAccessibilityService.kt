@@ -462,6 +462,19 @@ class BlockAccessibilityService : AccessibilityService() {
 
         // 处理上一个应用的倒计时暂停
         if (!isSameApp) {
+            // 同步处理 session 切换，确保顺序正确
+            serviceScope.launch(Dispatchers.IO) {
+                currentForegroundPackage?.let { previousPackage ->
+                    // 结束上一个应用的 session
+                    usageTrackingRepository.endSession(previousPackage)
+                    Log.d("BlockAccessibilityService", "Ended session for $previousPackage")
+                }
+
+                // 开始新应用的 session
+                usageTrackingRepository.startSession(newPackageName)
+                Log.d("BlockAccessibilityService", "Started session for $newPackageName")
+            }
+
             currentForegroundPackage?.let { previousPackage ->
                 // 暂停上一个应用的倒计时
                 if (countdownManager.isRunning(previousPackage)) {
@@ -1012,6 +1025,12 @@ class BlockAccessibilityService : AccessibilityService() {
     }
 
     override fun onDestroy() {
+        // 结束当前应用的 session
+        currentForegroundPackage?.let { packageName ->
+            serviceScope.launch(Dispatchers.IO) {
+                usageTrackingRepository.endSession(packageName)
+            }
+        }
         // 清理所有倒计时
         countdownManager.cleanup(serviceScope)
         // 取消所有通知

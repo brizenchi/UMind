@@ -1,7 +1,9 @@
 package com.example.umind.data.repository
 
 import com.example.umind.data.local.dao.UsageRecordDao
+import com.example.umind.data.local.dao.UsageSessionDao
 import com.example.umind.data.local.entity.UsageRecordEntity
+import com.example.umind.data.local.entity.UsageSessionEntity
 import kotlinx.coroutines.flow.Flow
 import java.time.LocalDate
 import java.time.temporal.ChronoUnit
@@ -10,7 +12,8 @@ import javax.inject.Singleton
 
 @Singleton
 class UsageTrackingRepository @Inject constructor(
-    private val usageRecordDao: UsageRecordDao
+    private val usageRecordDao: UsageRecordDao,
+    private val usageSessionDao: UsageSessionDao
 ) {
     /**
      * Record app usage duration
@@ -193,5 +196,51 @@ class UsageTrackingRepository @Inject constructor(
      */
     suspend fun getUsageRecordsInRange(startDate: LocalDate, endDate: LocalDate): List<UsageRecordEntity> {
         return usageRecordDao.getUsageRecordsInRange(startDate, endDate)
+    }
+
+    /**
+     * Start a new usage session
+     */
+    suspend fun startSession(packageName: String): String {
+        // 先结束该应用之前可能存在的活跃 session
+        endSession(packageName)
+
+        val today = LocalDate.now()
+        val record = usageRecordDao.getUsageRecord(packageName, today)
+            ?: UsageRecordEntity(
+                packageName = packageName,
+                date = today,
+                usageDurationMillis = 0,
+                openCount = 0
+            ).also { usageRecordDao.insertUsageRecord(it) }
+
+        val session = UsageSessionEntity(
+            recordId = record.id.toString(),
+            packageName = packageName,
+            startTime = System.currentTimeMillis()
+        )
+        usageSessionDao.insertSession(session)
+        android.util.Log.d("UsageTrackingRepository", "Started new session for $packageName at ${session.startTime}")
+        return session.id
+    }
+
+    /**
+     * End an active usage session
+     */
+    suspend fun endSession(packageName: String) {
+        val activeSession = usageSessionDao.getActiveSession(packageName)
+        if (activeSession != null) {
+            val endTime = System.currentTimeMillis()
+            val duration = endTime - activeSession.startTime
+            val updatedSession = activeSession.copy(
+                endTime = endTime,
+                durationMillis = duration
+            )
+            usageSessionDao.updateSession(updatedSession)
+            android.util.Log.d("UsageTrackingRepository", "Ended session for $packageName: ${activeSession.startTime} -> $endTime (${duration}ms)")
+
+            // Also update the usage record
+            recordUsage(packageName, duration)
+        }
     }
 }
