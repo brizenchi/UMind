@@ -6,8 +6,6 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -20,7 +18,6 @@ import androidx.navigation.NavController
 import com.example.umind.domain.model.FocusStrategy
 import com.example.umind.ui.components.FocusCard
 import com.example.umind.ui.components.ImmersiveBackground
-import com.example.umind.ui.components.ModernDialog
 import com.example.umind.ui.components.ScreenHeader
 import com.example.umind.ui.components.StatusPill
 import com.example.umind.ui.theme.ComponentSpacing
@@ -28,7 +25,7 @@ import com.example.umind.ui.theme.CornerRadius
 import com.example.umind.ui.theme.Spacing
 
 /**
- * 专注策略列表页面
+ * 应用组列表页面
  */
 @Composable
 fun FocusListScreen(
@@ -46,7 +43,7 @@ fun FocusListScreen(
                 contentColor = MaterialTheme.colorScheme.onPrimary,
                 shape = RoundedCornerShape(16.dp)
             ) {
-                Icon(Icons.Filled.Add, contentDescription = "添加专注策略")
+                Icon(Icons.Filled.Add, contentDescription = "添加应用组")
             }
         }
     ) { paddingValues ->
@@ -58,8 +55,8 @@ fun FocusListScreen(
                 verticalArrangement = Arrangement.spacedBy(ComponentSpacing.componentSpacing)
             ) {
                 ScreenHeader(
-                    title = "专注策略",
-                    subtitle = "创建并管理你的规则，保持稳定专注"
+                    title = "应用组",
+                    subtitle = "按类型管理受限应用，每个组可配置不同限制策略"
                 )
 
                 when (val state = uiState) {
@@ -83,14 +80,9 @@ fun FocusListScreen(
                             items(state.strategies) { strategy ->
                                 FocusStrategyCard(
                                     strategy = strategy,
-                                    onToggleActive = { isActive ->
-                                        viewModel.toggleStrategyActive(strategy.id, isActive)
-                                    },
-                                    onEdit = {
-                                        navController.navigate("focus_edit/${strategy.id}")
-                                    },
-                                    onDelete = {
-                                        viewModel.deleteStrategy(strategy.id)
+                                    appLabelMap = state.appLabelMap,
+                                    onClick = {
+                                        navController.navigate("focus_detail/${strategy.id}")
                                     }
                                 )
                             }
@@ -124,12 +116,12 @@ private fun EmptyStateCard() {
                 style = MaterialTheme.typography.displayMedium
             )
             Text(
-                text = "还没有专注策略",
+                text = "还没有应用组",
                 style = MaterialTheme.typography.titleLarge,
                 fontWeight = FontWeight.Bold
             )
             Text(
-                text = "点击右下角的 + 号创建第一个专注策略",
+                text = "点击右下角的 + 号创建第一个应用组",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 textAlign = TextAlign.Center
@@ -170,15 +162,25 @@ private fun ErrorCard(message: String) {
 @Composable
 private fun FocusStrategyCard(
     strategy: FocusStrategy,
-    onToggleActive: (Boolean) -> Unit,
-    onEdit: () -> Unit,
-    onDelete: () -> Unit
+    appLabelMap: Map<String, String>,
+    onClick: () -> Unit
 ) {
-    var showDeleteDialog by remember { mutableStateOf(false) }
+    val appNames = remember(strategy.targetApps, appLabelMap) {
+        strategy.targetApps
+            .map { packageName -> appLabelMap[packageName] ?: packageName }
+            .sorted()
+    }
+    val appPreview = remember(appNames) {
+        when {
+            appNames.isEmpty() -> "未选择应用"
+            appNames.size <= 4 -> appNames.joinToString(" · ")
+            else -> "${appNames.take(4).joinToString(" · ")} 等 ${appNames.size} 个"
+        }
+    }
 
     FocusCard(
         modifier = Modifier.fillMaxWidth(),
-        onClick = onEdit,
+        onClick = onClick,
         shape = RoundedCornerShape(CornerRadius.large),
         containerColor = if (strategy.isActive) {
             MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.72f)
@@ -205,7 +207,7 @@ private fun FocusStrategyCard(
                     )
                     Spacer(modifier = Modifier.height(Spacing.space4))
                     Text(
-                        text = strategy.getRestrictionSummary(),
+                        text = "受限应用：$appPreview",
                         style = MaterialTheme.typography.bodyMedium,
                         color = if (strategy.isActive) {
                             MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.9f)
@@ -214,7 +216,7 @@ private fun FocusStrategyCard(
                         }
                     )
                     Text(
-                        text = "${strategy.targetApps.size} 个应用被限制",
+                        text = "策略规则：${strategy.getRestrictionSummary()}",
                         style = MaterialTheme.typography.bodySmall,
                         color = if (strategy.isActive) {
                             MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f)
@@ -224,52 +226,19 @@ private fun FocusStrategyCard(
                     )
                 }
 
-                Switch(
-                    checked = strategy.isActive,
-                    onCheckedChange = onToggleActive
+                Text(
+                    text = "查看详情",
+                    style = MaterialTheme.typography.labelLarge,
+                    color = if (strategy.isActive) {
+                        MaterialTheme.colorScheme.onPrimaryContainer
+                    } else {
+                        MaterialTheme.colorScheme.primary
+                    }
                 )
             }
 
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.End
-            ) {
-                IconButton(onClick = onEdit) {
-                    Icon(
-                        imageVector = Icons.Default.Edit,
-                        contentDescription = "编辑策略",
-                        tint = if (strategy.isActive) {
-                            MaterialTheme.colorScheme.onPrimaryContainer
-                        } else {
-                            MaterialTheme.colorScheme.onSurfaceVariant
-                        }
-                    )
-                }
-                IconButton(onClick = { showDeleteDialog = true }) {
-                    Icon(
-                        imageVector = Icons.Default.Delete,
-                        contentDescription = "删除策略",
-                        tint = MaterialTheme.colorScheme.error
-                    )
-                }
-            }
-
-            if (strategy.isActive) {
-                Spacer(modifier = Modifier.height(ComponentSpacing.smallSpacing))
-                StatusPill(text = "当前激活")
-            }
+            Spacer(modifier = Modifier.height(ComponentSpacing.smallSpacing))
+            StatusPill(text = if (strategy.isActive) "当前激活" else "未激活")
         }
-    }
-
-    if (showDeleteDialog) {
-        ModernDialog(
-            onDismissRequest = { showDeleteDialog = false },
-            title = "删除策略",
-            message = "确定要删除 \"${strategy.name}\" 吗？此操作无法撤销。",
-            confirmText = "删除",
-            dismissText = "取消",
-            onConfirm = onDelete,
-            isDangerous = true
-        )
     }
 }

@@ -16,7 +16,7 @@ class SaveFocusStrategyUseCase @Inject constructor(
         if (strategy.name.isBlank()) {
             return Result.Error(
                 IllegalArgumentException("Strategy name cannot be empty"),
-                "请输入策略名称"
+                "请输入应用组名称"
             )
         }
 

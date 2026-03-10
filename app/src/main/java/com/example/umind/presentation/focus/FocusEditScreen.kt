@@ -58,16 +58,16 @@ fun FocusEditScreen(
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
             ScreenHeader(
-                title = "编辑专注策略",
+                title = "编辑应用组",
                 subtitle = "设置规则后，系统将在目标时间自动拦截"
             )
 
-        // 策略名称
+        // 应用组名称
         OutlinedTextField(
             value = uiState.name,
             onValueChange = { viewModel.updateName(it) },
-            label = { Text("策略名称") },
-            placeholder = { Text("如：工作专注、学习时间") },
+            label = { Text("应用组名称") },
+            placeholder = { Text("如：社媒、信息门户、娱乐") },
             modifier = Modifier.fillMaxWidth(),
             singleLine = true
         )
@@ -94,7 +94,7 @@ fun FocusEditScreen(
             ) {
                 Column {
                     Text(
-                        text = "要限制的应用",
+                        text = "组内受限应用",
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold
                     )
@@ -118,7 +118,7 @@ fun FocusEditScreen(
 
         // 规则标题
         Text(
-            text = "限制规则",
+            text = "组策略规则",
             style = MaterialTheme.typography.titleLarge,
             fontWeight = FontWeight.Bold
         )
@@ -178,7 +178,7 @@ fun FocusEditScreen(
                         fontWeight = FontWeight.Medium
                     )
                     Text(
-                        text = "激活后策略将立即生效",
+                        text = "激活后应用组规则将立即生效",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )

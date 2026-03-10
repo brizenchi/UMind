@@ -33,6 +33,7 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import com.example.umind.presentation.focus.AppSelectionScreen
+import com.example.umind.presentation.focus.FocusDetailScreen
 import com.example.umind.presentation.focus.FocusEditScreen
 import com.example.umind.presentation.focus.FocusListScreen
 import com.example.umind.presentation.focusmode.FocusModeScreen
@@ -147,16 +148,18 @@ fun MainScreen() {
     val backStack by navController.currentBackStackEntryAsState()
     val currentRoute = backStack?.destination?.route
 
-    // 判断是否在二级页面
-    val isSecondaryPage = currentRoute == "focus_edit" ||
-                         currentRoute?.startsWith("focus_edit/") == true ||
-                         currentRoute == "app_selection"
+    // 判断二级页面：详情页隐藏底部导航；编辑页和应用选择页沿用顶部栏
+    val showSecondaryTopBar = currentRoute == "focus_edit" ||
+        currentRoute?.startsWith("focus_edit/") == true ||
+        currentRoute == "app_selection"
+    val isSecondaryPage = showSecondaryTopBar ||
+        currentRoute?.startsWith("focus_detail/") == true
 
     Scaffold(
         modifier = Modifier.fillMaxSize(),
         containerColor = MaterialTheme.colorScheme.background,
         topBar = {
-            if (isSecondaryPage) {
+            if (showSecondaryTopBar) {
                 TopAppBar(
                     colors = TopAppBarDefaults.topAppBarColors(
                         containerColor = MaterialTheme.colorScheme.background,
@@ -166,7 +169,7 @@ fun MainScreen() {
                         Text(
                             when (currentRoute) {
                                 "app_selection" -> "选择应用"
-                                else -> "编辑专注策略"
+                                else -> "编辑应用组"
                             }
                         )
                     },
@@ -298,6 +301,9 @@ fun MainScreen() {
             }
             composable("focus_edit/{strategyId}") {
                 FocusEditScreen(navController = navController)
+            }
+            composable("focus_detail/{strategyId}") {
+                FocusDetailScreen(navController = navController)
             }
             composable("app_selection") { backStackEntry ->
                 val previousBackStackEntry = navController.previousBackStackEntry
