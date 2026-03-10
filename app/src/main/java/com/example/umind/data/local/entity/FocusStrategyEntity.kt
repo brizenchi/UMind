@@ -45,13 +45,17 @@ data class FocusStrategyEntity(
         }
 
         val usage = try {
-            usageLimits?.let { Json.decodeFromString<UsageLimitsData>(it).toDomainModel() }
+            usageLimits
+                ?.let { Json.decodeFromString<UsageLimitsData>(it).toDomainModel() }
+                ?.normalizedToTotalAll()
         } catch (e: Exception) {
             null
         }
 
         val openCount = try {
-            openCountLimits?.let { Json.decodeFromString<OpenCountLimitsData>(it).toDomainModel() }
+            openCountLimits
+                ?.let { Json.decodeFromString<OpenCountLimitsData>(it).toDomainModel() }
+                ?.normalizedToTotalAll()
         } catch (e: Exception) {
             null
         }
@@ -88,10 +92,10 @@ data class FocusStrategyEntity(
                 timeRestrictions = Json.encodeToString(
                     strategy.timeRestrictions.map { TimeRestrictionData.fromDomainModel(it) }
                 ),
-                usageLimits = strategy.usageLimits?.let {
+                usageLimits = strategy.usageLimits?.normalizedToTotalAll()?.let {
                     Json.encodeToString(UsageLimitsData.fromDomainModel(it))
                 },
-                openCountLimits = strategy.openCountLimits?.let {
+                openCountLimits = strategy.openCountLimits?.normalizedToTotalAll()?.let {
                     Json.encodeToString(OpenCountLimitsData.fromDomainModel(it))
                 },
                 enforcementMode = strategy.enforcementMode.name,
@@ -187,4 +191,3 @@ data class OpenCountLimitsData(
         }
     }
 }
-

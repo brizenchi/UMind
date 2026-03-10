@@ -52,8 +52,8 @@ class FocusEditViewModel @Inject constructor(
                             name = it.name,
                             selectedPackages = it.targetApps,
                             timeRestrictions = it.timeRestrictions,
-                            usageLimits = it.usageLimits,
-                            openCountLimits = it.openCountLimits,
+                            usageLimits = it.usageLimits?.normalizedToTotalAll(),
+                            openCountLimits = it.openCountLimits?.normalizedToTotalAll(),
                             enforcementMode = it.enforcementMode,
                             isActive = it.isActive
                         )
@@ -144,17 +144,6 @@ class FocusEditViewModel @Inject constructor(
         )
     }
 
-    fun setUsageLimitsPerApp(hours: Int, minutes: Int) {
-        val duration = (hours * 60 + minutes).minutes
-        _uiState.value = _uiState.value.copy(
-            usageLimits = UsageLimits(
-                type = LimitType.PER_APP,
-                perAppLimit = duration
-            ),
-            hasUnsavedChanges = true
-        )
-    }
-
     // Open count limits
     fun updateOpenCountLimits(limits: OpenCountLimits?) {
         _uiState.value = _uiState.value.copy(
@@ -168,16 +157,6 @@ class FocusEditViewModel @Inject constructor(
             openCountLimits = OpenCountLimits(
                 type = LimitType.TOTAL_ALL,
                 totalCount = count
-            ),
-            hasUnsavedChanges = true
-        )
-    }
-
-    fun setOpenCountLimitsPerApp(count: Int) {
-        _uiState.value = _uiState.value.copy(
-            openCountLimits = OpenCountLimits(
-                type = LimitType.PER_APP,
-                perAppCount = count
             ),
             hasUnsavedChanges = true
         )
@@ -208,8 +187,8 @@ class FocusEditViewModel @Inject constructor(
                 name = state.name,
                 targetApps = state.selectedPackages,
                 timeRestrictions = state.timeRestrictions,
-                usageLimits = state.usageLimits,
-                openCountLimits = state.openCountLimits,
+                usageLimits = state.usageLimits?.normalizedToTotalAll(),
+                openCountLimits = state.openCountLimits?.normalizedToTotalAll(),
                 enforcementMode = state.enforcementMode,
                 isActive = state.isActive
             )

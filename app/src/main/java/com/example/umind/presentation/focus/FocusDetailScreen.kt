@@ -58,6 +58,7 @@ import com.example.umind.ui.components.ImmersiveBackground
 import com.example.umind.ui.components.ModernDialog
 import com.example.umind.ui.components.ScreenHeader
 import com.example.umind.ui.theme.ComponentSpacing
+import com.example.umind.util.InternalLaunchTracker
 import java.time.format.DateTimeFormatter
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -145,6 +146,8 @@ fun FocusDetailScreen(
                         strategy = strategy,
                         appLabelMap = uiState.appLabelMap,
                         loadedIcons = uiState.loadedIcons,
+                        todayUsedDurationMillis = uiState.totalUsageDurationMillis,
+                        todayOpenCount = uiState.totalOpenCount,
                         isUpdatingActive = uiState.isUpdatingActive,
                         isDeleting = uiState.isDeleting,
                         errorMessage = uiState.error,
@@ -218,6 +221,8 @@ private fun FocusDetailContent(
     strategy: FocusStrategy,
     appLabelMap: Map<String, String>,
     loadedIcons: Map<String, Bitmap?>,
+    todayUsedDurationMillis: Long,
+    todayOpenCount: Int,
     isUpdatingActive: Boolean,
     isDeleting: Boolean,
     errorMessage: String?,
@@ -242,10 +247,61 @@ private fun FocusDetailContent(
             .padding(ComponentSpacing.pagePadding),
         verticalArrangement = Arrangement.spacedBy(ComponentSpacing.componentSpacing)
     ) {
-        ScreenHeader(
-            title = "应用组详情",
-            subtitle = "查看受限应用与已配置策略"
-        )
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            ScreenHeader(
+                title = "应用组详情",
+                subtitle = "查看受限应用与已配置策略",
+                modifier = Modifier.weight(1f)
+            )
+
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                if (isUpdatingActive) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(20.dp),
+                        strokeWidth = 2.dp
+                    )
+                } else {
+                    Text(
+                        text = "启用",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Switch(
+                        checked = strategy.isActive,
+                        onCheckedChange = onToggleActive,
+                        enabled = canToggle
+                    )
+                }
+            }
+        }
+
+        FocusCard(modifier = Modifier.fillMaxWidth()) {
+            Column(
+                modifier = Modifier.padding(ComponentSpacing.cardPadding),
+                verticalArrangement = Arrangement.spacedBy(ComponentSpacing.smallSpacing)
+            ) {
+                Text(
+                    text = "今日使用统计",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold
+                )
+                RestrictionRow(
+                    label = "已使用时长",
+                    value = formatDurationMinutes(todayUsedDurationMillis / 60000)
+                )
+                RestrictionRow(
+                    label = "已打开次数",
+                    value = "${todayOpenCount} 次"
+                )
+            }
+        }
 
         if (errorMessage != null) {
             FocusCard(
@@ -269,42 +325,6 @@ private fun FocusDetailContent(
                     TextButton(onClick = onDismissError) {
                         Text("关闭")
                     }
-                }
-            }
-        }
-
-        FocusCard(modifier = Modifier.fillMaxWidth()) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(ComponentSpacing.cardPadding),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = "启用应用组",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold
-                    )
-                    Text(
-                        text = if (strategy.isActive) "当前生效中" else "当前未生效",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-
-                if (isUpdatingActive) {
-                    CircularProgressIndicator(
-                        modifier = Modifier.size(20.dp),
-                        strokeWidth = 2.dp
-                    )
-                } else {
-                    Switch(
-                        checked = strategy.isActive,
-                        onCheckedChange = onToggleActive,
-                        enabled = canToggle
-                    )
                 }
             }
         }
@@ -492,9 +512,11 @@ private fun openRestrictedApp(context: Context, packageName: String) {
     }
 
     try {
+        InternalLaunchTracker.markLaunchFromUMind(context, packageName)
         launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         context.startActivity(launchIntent)
     } catch (e: Exception) {
+        InternalLaunchTracker.clear(context)
         Toast.makeText(context, "启动应用失败", Toast.LENGTH_SHORT).show()
     }
 }
@@ -508,28 +530,14 @@ private fun formatUsageLimits(limits: UsageLimits?): String {
     if (limits == null) {
         return "未设置"
     }
-    return when (limits.type) {
-        com.example.umind.domain.model.LimitType.TOTAL_ALL -> {
-            "组内总时长 ${formatDurationMinutes(limits.totalLimit?.inWholeMinutes)}"
-        }
-        com.example.umind.domain.model.LimitType.PER_APP -> {
-            "每个应用 ${formatDurationMinutes(limits.perAppLimit?.inWholeMinutes)}"
-        }
-    }
+    return "组内总时长 ${formatDurationMinutes(limits.effectiveLimit()?.inWholeMinutes)}"
 }
 
 private fun formatOpenCountLimits(limits: OpenCountLimits?): String {
     if (limits == null) {
         return "未设置"
     }
-    return when (limits.type) {
-        com.example.umind.domain.model.LimitType.TOTAL_ALL -> {
-            "组内总次数 ${limits.totalCount ?: 0} 次"
-        }
-        com.example.umind.domain.model.LimitType.PER_APP -> {
-            "每个应用 ${limits.perAppCount ?: 0} 次"
-        }
-    }
+    return "组内总次数 ${limits.effectiveCount() ?: 0} 次"
 }
 
 private fun formatDurationMinutes(minutes: Long?): String {

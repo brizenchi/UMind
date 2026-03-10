@@ -3,9 +3,6 @@ package com.example.umind.util
 import android.os.Handler
 import android.os.Looper
 import android.util.Log
-import com.example.umind.data.repository.UsageTrackingRepository
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.launch
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -18,9 +15,7 @@ import javax.inject.Singleton
  * 4. 提供倒计时更新回调
  */
 @Singleton
-class UsageCountdownManager @Inject constructor(
-    private val usageTrackingRepository: UsageTrackingRepository
-) {
+class UsageCountdownManager @Inject constructor() {
     private val handler = Handler(Looper.getMainLooper())
     private val countdownStates = mutableMapOf<String, CountdownState>()
 
@@ -34,11 +29,12 @@ class UsageCountdownManager @Inject constructor(
      * 倒计时状态
      */
     private data class CountdownState(
-        val packageName: String,
+        val key: String,
         val limitMillis: Long,              // 总限制时间（毫秒）
-        var usedMillis: Long,               // 已使用时间（毫秒）- 从数据库获取
+        var usedMillis: Long,               // 已使用时间（毫秒）
         var sessionStartTime: Long = 0,     // 当前会话开始时间
         var isRunning: Boolean = false,     // 是否正在运行
+        val createdAt: Long = System.currentTimeMillis(),
         var updateRunnable: Runnable? = null,
         var onUpdate: ((remainingMillis: Long) -> Unit)? = null,
         var onTimeUp: (() -> Unit)? = null
@@ -46,42 +42,40 @@ class UsageCountdownManager @Inject constructor(
 
     /**
      * 开始倒计时
-     * @param packageName 应用包名
+     * @param key 倒计时唯一键（建议使用应用组作用域）
      * @param limitMillis 总限制时间（毫秒）
      * @param usedMillis 已使用时间（毫秒）
-     * @param scope 协程作用域，用于异步保存使用时长
      * @param onUpdate 倒计时更新回调（剩余毫秒数）
      * @param onTimeUp 时间用完回调
      */
     fun startCountdown(
-        packageName: String,
+        key: String,
         limitMillis: Long,
         usedMillis: Long,
-        scope: CoroutineScope,
         onUpdate: (remainingMillis: Long) -> Unit,
         onTimeUp: () -> Unit
     ) {
-        Log.d(TAG, "=== startCountdown for $packageName ===")
+        Log.d(TAG, "=== startCountdown for $key ===")
         Log.d(TAG, "limitMillis: $limitMillis, usedMillis: $usedMillis")
 
         // Prevent too many active countdowns to avoid performance issues
-        if (countdownStates.size >= MAX_ACTIVE_COUNTDOWNS && !countdownStates.containsKey(packageName)) {
+        if (countdownStates.size >= MAX_ACTIVE_COUNTDOWNS && !countdownStates.containsKey(key)) {
             Log.w(TAG, "Too many active countdowns (${countdownStates.size}), cleaning up oldest")
             // Remove the oldest non-running countdown
             val oldestPaused = countdownStates.entries
                 .filter { !it.value.isRunning }
-                .minByOrNull { it.value.sessionStartTime }
+                .minByOrNull { it.value.createdAt }
             oldestPaused?.let {
-                stopCountdown(it.key, scope)
+                stopCountdown(it.key)
             }
         }
 
         // 停止之前的倒计时（如果有）
-        stopCountdown(packageName, scope)
+        stopCountdown(key)
 
         // 创建新的倒计时状态
         val state = CountdownState(
-            packageName = packageName,
+            key = key,
             limitMillis = limitMillis,
             usedMillis = usedMillis,
             sessionStartTime = System.currentTimeMillis(),
@@ -94,12 +88,12 @@ class UsageCountdownManager @Inject constructor(
         lateinit var updateRunnable: Runnable
         updateRunnable = Runnable {
             if (!state.isRunning) {
-                Log.d(TAG, "Countdown for $packageName is not running, stopping updates")
+                Log.d(TAG, "Countdown for $key is not running, stopping updates")
                 return@Runnable
             }
 
             val remainingMillis = getRemainingTime(state)
-            Log.d(TAG, "Countdown update for $packageName: remaining=${remainingMillis}ms")
+            Log.d(TAG, "Countdown update for $key: remaining=${remainingMillis}ms")
 
             if (remainingMillis > 0) {
                 // 还有剩余时间，通知更新
@@ -108,48 +102,36 @@ class UsageCountdownManager @Inject constructor(
                 handler.postDelayed(updateRunnable, UPDATE_INTERVAL_MS)
             } else {
                 // 时间用完
-                Log.d(TAG, "!!! Time's up for $packageName !!!")
+                Log.d(TAG, "!!! Time's up for $key !!!")
                 state.isRunning = false
                 state.onTimeUp?.invoke()
 
-                // 保存最终使用时长
-                scope.launch {
-                    val finalUsedMillis = state.usedMillis +
-                        (System.currentTimeMillis() - state.sessionStartTime)
-                    val sessionDuration = System.currentTimeMillis() - state.sessionStartTime
-                    if (sessionDuration > 0) {
-                        usageTrackingRepository.recordUsage(packageName, sessionDuration)
-                        Log.d(TAG, "Recorded final usage for $packageName: ${sessionDuration}ms")
-                    }
-                }
-
                 // 移除状态
-                countdownStates.remove(packageName)
+                countdownStates.remove(key)
             }
         }
 
         state.updateRunnable = updateRunnable
-        countdownStates[packageName] = state
+        countdownStates[key] = state
 
         // 立即执行第一次更新
         handler.post(updateRunnable)
 
-        Log.d(TAG, "Countdown started for $packageName")
+        Log.d(TAG, "Countdown started for $key")
     }
 
     /**
      * 暂停倒计时（应用切换到后台时调用）
-     * 会保存当前会话的使用时长到数据库
      */
-    fun pauseCountdown(packageName: String, scope: CoroutineScope) {
-        val state = countdownStates[packageName] ?: return
+    fun pauseCountdown(key: String) {
+        val state = countdownStates[key] ?: return
 
         if (!state.isRunning) {
-            Log.d(TAG, "Countdown for $packageName is already paused")
+            Log.d(TAG, "Countdown for $key is already paused")
             return
         }
 
-        Log.d(TAG, "=== pauseCountdown for $packageName ===")
+        Log.d(TAG, "=== pauseCountdown for $key ===")
 
         // 计算本次会话的使用时长
         val sessionDuration = System.currentTimeMillis() - state.sessionStartTime
@@ -158,35 +140,27 @@ class UsageCountdownManager @Inject constructor(
         // 更新已使用时间
         state.usedMillis += sessionDuration
 
-        // 保存到数据库
-        if (sessionDuration > 0) {
-            scope.launch {
-                usageTrackingRepository.recordUsage(packageName, sessionDuration)
-                Log.d(TAG, "Recorded usage for $packageName: ${sessionDuration}ms, total used: ${state.usedMillis}ms")
-            }
-        }
-
         // 标记为暂停
         state.isRunning = false
 
         // 取消定时更新
         state.updateRunnable?.let { handler.removeCallbacks(it) }
 
-        Log.d(TAG, "Countdown paused for $packageName, total used: ${state.usedMillis}ms")
+        Log.d(TAG, "Countdown paused for $key, total used: ${state.usedMillis}ms")
     }
 
     /**
      * 恢复倒计时（应用重新回到前台时调用）
      */
-    fun resumeCountdown(packageName: String) {
-        val state = countdownStates[packageName] ?: return
+    fun resumeCountdown(key: String) {
+        val state = countdownStates[key] ?: return
 
         if (state.isRunning) {
-            Log.d(TAG, "Countdown for $packageName is already running")
+            Log.d(TAG, "Countdown for $key is already running")
             return
         }
 
-        Log.d(TAG, "=== resumeCountdown for $packageName ===")
+        Log.d(TAG, "=== resumeCountdown for $key ===")
         Log.d(TAG, "Previously used: ${state.usedMillis}ms")
 
         // 重新记录会话开始时间
@@ -196,36 +170,24 @@ class UsageCountdownManager @Inject constructor(
         // 重新启动定时更新
         state.updateRunnable?.let { handler.post(it) }
 
-        Log.d(TAG, "Countdown resumed for $packageName")
+        Log.d(TAG, "Countdown resumed for $key")
     }
 
     /**
      * 停止倒计时并清理资源
-     * 会保存当前会话的使用时长到数据库
      */
-    fun stopCountdown(packageName: String, scope: CoroutineScope) {
-        val state = countdownStates[packageName] ?: return
+    fun stopCountdown(key: String) {
+        val state = countdownStates[key] ?: return
 
-        Log.d(TAG, "=== stopCountdown for $packageName ===")
-
-        // 如果正在运行，先保存使用时长
-        if (state.isRunning) {
-            val sessionDuration = System.currentTimeMillis() - state.sessionStartTime
-            if (sessionDuration > 0) {
-                scope.launch {
-                    usageTrackingRepository.recordUsage(packageName, sessionDuration)
-                    Log.d(TAG, "Recorded final usage for $packageName: ${sessionDuration}ms")
-                }
-            }
-        }
+        Log.d(TAG, "=== stopCountdown for $key ===")
 
         // 取消定时更新
         state.updateRunnable?.let { handler.removeCallbacks(it) }
 
         // 移除状态
-        countdownStates.remove(packageName)
+        countdownStates.remove(key)
 
-        Log.d(TAG, "Countdown stopped for $packageName")
+        Log.d(TAG, "Countdown stopped for $key")
     }
 
     /**
@@ -244,39 +206,39 @@ class UsageCountdownManager @Inject constructor(
     /**
      * 获取当前剩余时间（毫秒）- 公开方法
      */
-    fun getRemainingTime(packageName: String): Long? {
-        val state = countdownStates[packageName] ?: return null
+    fun getRemainingTime(key: String): Long? {
+        val state = countdownStates[key] ?: return null
         return getRemainingTime(state)
     }
 
     /**
      * 获取当前剩余时间（毫秒）- 别名方法
      */
-    fun getRemainingMillis(packageName: String): Long {
-        return getRemainingTime(packageName) ?: 0
+    fun getRemainingMillis(key: String): Long {
+        return getRemainingTime(key) ?: 0
     }
 
     /**
      * 检查倒计时是否正在运行
      */
-    fun isRunning(packageName: String): Boolean {
-        return countdownStates[packageName]?.isRunning ?: false
+    fun isRunning(key: String): Boolean {
+        return countdownStates[key]?.isRunning ?: false
     }
 
     /**
      * 检查是否存在倒计时状态（包括暂停的）
      */
-    fun hasCountdown(packageName: String): Boolean {
-        return countdownStates.containsKey(packageName)
+    fun hasCountdown(key: String): Boolean {
+        return countdownStates.containsKey(key)
     }
 
     /**
      * 清理所有倒计时
      */
-    fun cleanup(scope: CoroutineScope) {
+    fun cleanup() {
         Log.d(TAG, "=== cleanup all countdowns ===")
-        countdownStates.keys.toList().forEach { packageName ->
-            stopCountdown(packageName, scope)
+        countdownStates.keys.toList().forEach { key ->
+            stopCountdown(key)
         }
     }
 }

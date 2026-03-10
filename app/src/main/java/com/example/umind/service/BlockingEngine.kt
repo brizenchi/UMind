@@ -8,7 +8,6 @@ import com.example.umind.domain.repository.FocusRepository
 import java.time.LocalDate
 import javax.inject.Inject
 import javax.inject.Singleton
-import kotlin.time.Duration
 
 /**
  * 阻止决策引擎 - 核心业务逻辑
@@ -105,7 +104,10 @@ class BlockingEngine @Inject constructor(
         // 首先检查是否是系统白名单应用
         if (isSystemWhitelistedApp(packageName)) {
             Log.d(TAG, "System whitelisted app, allowing: $packageName")
-            return BlockInfo(shouldBlock = false)
+            return BlockInfo(
+                shouldBlock = false,
+                isUnderDailyManagement = false
+            )
         }
 
         // 优先级 1: 检查专注模式
@@ -152,7 +154,8 @@ class BlockingEngine @Inject constructor(
         return BlockInfo(
             shouldBlock = true,
             reasons = listOf(BlockReason.FocusModeActive),
-            usageInfo = null
+            usageInfo = null,
+            isUnderDailyManagement = false
         )
     }
 
@@ -167,7 +170,10 @@ class BlockingEngine @Inject constructor(
         val allStrategiesResult = focusRepository.getFocusStrategies()
         if (allStrategiesResult !is Result.Success) {
             Log.e(TAG, "Failed to get strategies")
-            return BlockInfo(shouldBlock = false)
+            return BlockInfo(
+                shouldBlock = false,
+                isUnderDailyManagement = false
+            )
         }
 
         val activeStrategies = allStrategiesResult.data.filter { it.isActive }
@@ -180,13 +186,16 @@ class BlockingEngine @Inject constructor(
 
         if (relevantStrategies.isEmpty()) {
             Log.d(TAG, "No relevant strategies for $packageName")
-            return BlockInfo(shouldBlock = false)
+            return BlockInfo(
+                shouldBlock = false,
+                isUnderDailyManagement = false
+            )
         }
 
         Log.d(TAG, "Found ${relevantStrategies.size} relevant strategies: ${relevantStrategies.map { it.name }}")
 
         // 合并所有策略
-        val mergedRestriction = mergeStrategies(relevantStrategies, packageName)
+        val mergedRestriction = mergeStrategies(relevantStrategies)
         Log.d(TAG, "Merged enforcement mode: ${mergedRestriction.enforcementMode}")
 
         // 检查执行模式
@@ -194,17 +203,18 @@ class BlockingEngine @Inject constructor(
             EnforcementMode.MONITOR_ONLY -> {
                 Log.d(TAG, "Monitor only mode, not blocking")
                 // 仅监控，不阻止，但返回使用信息
-                val usageInfo = calculateUsageInfo(packageName, mergedRestriction)
+                val usageInfo = calculateUsageInfo(mergedRestriction)
                 BlockInfo(
                     shouldBlock = false,
                     reasons = emptyList(),
-                    usageInfo = usageInfo
+                    usageInfo = usageInfo,
+                    isUnderDailyManagement = true
                 )
             }
 
             EnforcementMode.DIRECT_BLOCK -> {
                 Log.d(TAG, "Direct block mode, checking restrictions")
-                checkAllRestrictions(packageName, mergedRestriction)
+                checkAllRestrictions(mergedRestriction)
             }
 
             EnforcementMode.FORCE_THROUGH_APP -> {
@@ -215,12 +225,13 @@ class BlockingEngine @Inject constructor(
                     BlockInfo(
                         shouldBlock = true,
                         reasons = listOf(BlockReason.ForceThroughApp),
-                        usageInfo = null
+                        usageInfo = null,
+                        isUnderDailyManagement = true
                     )
                 } else {
                     Log.d(TAG, "Opened from UMind, checking restrictions")
                     // 从 UMind 内打开，检查限制
-                    checkAllRestrictions(packageName, mergedRestriction)
+                    checkAllRestrictions(mergedRestriction)
                 }
             }
         }
@@ -236,8 +247,7 @@ class BlockingEngine @Inject constructor(
      * 4. 执行模式：取最严格
      */
     private fun mergeStrategies(
-        strategies: List<FocusStrategy>,
-        packageName: String
+        strategies: List<FocusStrategy>
     ): MergedRestriction {
         Log.d(TAG, "=== Merging ${strategies.size} strategies ===")
 
@@ -247,42 +257,16 @@ class BlockingEngine @Inject constructor(
         Log.d(TAG, "Merged time restrictions: ${mergedTimeRestrictions.size} time slots")
 
         // 2. 合并使用时长限制（取最小值）
-        // 保留限制类型信息，用于后续判断如何计算使用量
-        data class UsageLimitWithType(val limit: Duration, val type: LimitType)
-
-        val usageLimitsWithType = strategies.mapNotNull { strategy ->
-            strategy.usageLimits?.let { limits ->
-                val limit = when (limits.type) {
-                    LimitType.TOTAL_ALL -> limits.totalLimit
-                    LimitType.PER_APP -> limits.perAppLimit
-                }
-                limit?.let { UsageLimitWithType(it, limits.type) }
-            }
-        }
-
-        val mergedUsageLimitWithType = usageLimitsWithType.minByOrNull { it.limit }
-        val mergedUsageLimit = mergedUsageLimitWithType?.limit
-        val mergedUsageLimitType = mergedUsageLimitWithType?.type
-        Log.d(TAG, "Merged usage limit: $mergedUsageLimit, type: $mergedUsageLimitType (from ${usageLimitsWithType.size} limits)")
+        val mergedUsageLimit = strategies
+            .mapNotNull { it.usageLimits?.effectiveLimit() }
+            .minOrNull()
+        Log.d(TAG, "Merged usage limit: $mergedUsageLimit")
 
         // 3. 合并打开次数限制（取最小值）
-        // 保留限制类型信息
-        data class OpenCountLimitWithType(val limit: Int, val type: LimitType)
-
-        val openCountLimitsWithType = strategies.mapNotNull { strategy ->
-            strategy.openCountLimits?.let { limits ->
-                val limit = when (limits.type) {
-                    LimitType.TOTAL_ALL -> limits.totalCount
-                    LimitType.PER_APP -> limits.perAppCount
-                }
-                limit?.let { OpenCountLimitWithType(it, limits.type) }
-            }
-        }
-
-        val mergedOpenCountLimitWithType = openCountLimitsWithType.minByOrNull { it.limit }
-        val mergedOpenCountLimit = mergedOpenCountLimitWithType?.limit
-        val mergedOpenCountLimitType = mergedOpenCountLimitWithType?.type
-        Log.d(TAG, "Merged open count limit: $mergedOpenCountLimit, type: $mergedOpenCountLimitType (from ${openCountLimitsWithType.size} limits)")
+        val mergedOpenCountLimit = strategies
+            .mapNotNull { it.openCountLimits?.effectiveCount() }
+            .minOrNull()
+        Log.d(TAG, "Merged open count limit: $mergedOpenCountLimit")
 
         // 4. 确定执行模式（取最严格）
         val enforcementMode = strategies
@@ -298,9 +282,7 @@ class BlockingEngine @Inject constructor(
         return MergedRestriction(
             timeRestrictions = mergedTimeRestrictions,
             usageLimit = mergedUsageLimit,
-            usageLimitType = mergedUsageLimitType,
             openCountLimit = mergedOpenCountLimit,
-            openCountLimitType = mergedOpenCountLimitType,
             targetApps = targetApps,
             enforcementMode = enforcementMode
         )
@@ -310,11 +292,11 @@ class BlockingEngine @Inject constructor(
      * 检查所有限制
      */
     private suspend fun checkAllRestrictions(
-        packageName: String,
         merged: MergedRestriction
     ): BlockInfo {
         val today = LocalDate.now()
         val reasons = mutableListOf<BlockReason>()
+        val usageScopeId = buildUsageScopeId(merged.targetApps)
 
         // 1. 检查时间范围限制
         val withinTimeRestriction = merged.timeRestrictions.any { it.isWithinRestriction() }
@@ -333,37 +315,20 @@ class BlockingEngine @Inject constructor(
         var usedMinutes: Long = 0
         var remainingMinutes: Long? = null
 
-        if (usageLimit != null && merged.usageLimitType != null) {
+        if (usageLimit != null) {
             val limitMs = usageLimit.inWholeMilliseconds
             usageLimitMinutes = limitMs / 60000
 
-            // 根据限制类型计算使用量
-            val usedMs = when (merged.usageLimitType) {
-                LimitType.TOTAL_ALL -> {
-                    // 所有应用总时长：计算所有目标应用的总使用时长
-                    Log.d(TAG, "TOTAL_ALL mode: calculating total usage across ${merged.targetApps.size} apps")
-                    var totalUsage = 0L
-                    merged.targetApps.forEach { app ->
-                        val appUsage = usageTrackingRepository.getUsageDuration(app, today)
-                        totalUsage += appUsage
-                        Log.d(TAG, "  - $app: ${appUsage}ms")
-                    }
-                    Log.d(TAG, "  Total usage: ${totalUsage}ms")
-                    totalUsage
-                }
-                LimitType.PER_APP -> {
-                    // 每个应用单独计算：只计算当前应用的使用时长
-                    Log.d(TAG, "PER_APP mode: calculating usage for $packageName only")
-                    usageTrackingRepository.getUsageDuration(packageName, today)
-                }
-                null -> usageTrackingRepository.getUsageDuration(packageName, today)
-            }
+            val usedMs = calculateTotalUsage(merged.targetApps, today)
 
             val remainingMs = limitMs - usedMs
             usedMinutes = usedMs / 60000
             remainingMinutes = if (remainingMs > 0) remainingMs / 60000 else 0
 
-            Log.d(TAG, "Usage check (${merged.usageLimitType}): limit=${usageLimitMinutes}min, used=${usedMinutes}min, remaining=${remainingMinutes}min")
+            Log.d(
+                TAG,
+                "Usage check (TOTAL_ALL): limit=${usageLimitMinutes}min, used=${usedMinutes}min, remaining=${remainingMinutes}min"
+            )
 
             if (remainingMs <= 0) {
                 Log.d(TAG, "Usage limit exceeded")
@@ -379,32 +344,15 @@ class BlockingEngine @Inject constructor(
         var openCount: Int = 0
         var remainingCount: Int? = null
 
-        if (openCountLimit != null && merged.openCountLimitType != null) {
-            // 根据限制类型计算打开次数
-            openCount = when (merged.openCountLimitType) {
-                LimitType.TOTAL_ALL -> {
-                    // 所有应用总次数：计算所有目标应用的总打开次数
-                    Log.d(TAG, "TOTAL_ALL mode: calculating total open count across ${merged.targetApps.size} apps")
-                    var totalCount = 0
-                    merged.targetApps.forEach { app ->
-                        val appCount = usageTrackingRepository.getOpenCount(app, today)
-                        totalCount += appCount
-                        Log.d(TAG, "  - $app: $appCount times")
-                    }
-                    Log.d(TAG, "  Total count: $totalCount")
-                    totalCount
-                }
-                LimitType.PER_APP -> {
-                    // 每个应用单独计算：只计算当前应用的打开次数
-                    Log.d(TAG, "PER_APP mode: calculating open count for $packageName only")
-                    usageTrackingRepository.getOpenCount(packageName, today)
-                }
-                null -> usageTrackingRepository.getOpenCount(packageName, today)
-            }
+        if (openCountLimit != null) {
+            openCount = calculateTotalOpenCount(merged.targetApps, today)
 
             remainingCount = if (openCountLimit > openCount) openCountLimit - openCount else 0
 
-            Log.d(TAG, "Open count check (${merged.openCountLimitType}): limit=$openCountLimit, used=$openCount, remaining=$remainingCount")
+            Log.d(
+                TAG,
+                "Open count check (TOTAL_ALL): limit=$openCountLimit, used=$openCount, remaining=$remainingCount"
+            )
 
             if (openCount >= openCountLimit) {
                 Log.d(TAG, "Open count limit exceeded")
@@ -418,6 +366,7 @@ class BlockingEngine @Inject constructor(
         // 创建使用信息
         val usageInfo = if (usageLimitMinutes != null || openCountLimit != null) {
             UsageInfo(
+                usageScopeId = usageScopeId,
                 usageLimitMinutes = usageLimitMinutes,
                 usedMinutes = usedMinutes,
                 remainingMinutes = remainingMinutes,
@@ -435,7 +384,8 @@ class BlockingEngine @Inject constructor(
         return BlockInfo(
             shouldBlock = shouldBlock,
             reasons = reasons,
-            usageInfo = usageInfo
+            usageInfo = usageInfo,
+            isUnderDailyManagement = true
         )
     }
 
@@ -443,10 +393,10 @@ class BlockingEngine @Inject constructor(
      * 计算使用信息（用于 MONITOR_ONLY 模式）
      */
     private suspend fun calculateUsageInfo(
-        packageName: String,
         merged: MergedRestriction
     ): UsageInfo? {
         val today = LocalDate.now()
+        val usageScopeId = buildUsageScopeId(merged.targetApps)
 
         var usageLimitMinutes: Long? = null
         var usedMinutes: Long = 0
@@ -460,22 +410,7 @@ class BlockingEngine @Inject constructor(
             val limitMs = limit.inWholeMilliseconds
             usageLimitMinutes = limitMs / 60000
 
-            // 根据限制类型计算使用量
-            val usedMs = when (merged.usageLimitType) {
-                LimitType.TOTAL_ALL -> {
-                    // 所有应用总时长：计算所有目标应用的总使用时长
-                    var totalUsage = 0L
-                    merged.targetApps.forEach { app ->
-                        totalUsage += usageTrackingRepository.getUsageDuration(app, today)
-                    }
-                    totalUsage
-                }
-                LimitType.PER_APP -> {
-                    // 每个应用单独计算：只计算当前应用的使用时长
-                    usageTrackingRepository.getUsageDuration(packageName, today)
-                }
-                null -> usageTrackingRepository.getUsageDuration(packageName, today)
-            }
+            val usedMs = calculateTotalUsage(merged.targetApps, today)
 
             val remainingMs = limitMs - usedMs
             usedMinutes = usedMs / 60000
@@ -486,28 +421,14 @@ class BlockingEngine @Inject constructor(
         merged.openCountLimit?.let { limit ->
             openCountLimit = limit
 
-            // 根据限制类型计算打开次数
-            openCount = when (merged.openCountLimitType) {
-                LimitType.TOTAL_ALL -> {
-                    // 所有应用总次数：计算所有目标应用的总打开次数
-                    var totalCount = 0
-                    merged.targetApps.forEach { app ->
-                        totalCount += usageTrackingRepository.getOpenCount(app, today)
-                    }
-                    totalCount
-                }
-                LimitType.PER_APP -> {
-                    // 每个应用单独计算：只计算当前应用的打开次数
-                    usageTrackingRepository.getOpenCount(packageName, today)
-                }
-                null -> usageTrackingRepository.getOpenCount(packageName, today)
-            }
+            openCount = calculateTotalOpenCount(merged.targetApps, today)
 
             remainingCount = if (limit > openCount) limit - openCount else 0
         }
 
         return if (usageLimitMinutes != null || openCountLimit != null) {
             UsageInfo(
+                usageScopeId = usageScopeId,
                 usageLimitMinutes = usageLimitMinutes,
                 usedMinutes = usedMinutes,
                 remainingMinutes = remainingMinutes,
@@ -519,6 +440,36 @@ class BlockingEngine @Inject constructor(
             null
         }
     }
+
+    private suspend fun calculateTotalUsage(targetApps: Set<String>, date: LocalDate): Long {
+        Log.d(TAG, "TOTAL_ALL mode: calculating total usage across ${targetApps.size} apps")
+        var totalUsage = 0L
+        targetApps.forEach { app ->
+            val appUsage = usageTrackingRepository.getUsageDuration(app, date)
+            totalUsage += appUsage
+            Log.d(TAG, "  - $app: ${appUsage}ms")
+        }
+        Log.d(TAG, "  Total usage: ${totalUsage}ms")
+        return totalUsage
+    }
+
+    private suspend fun calculateTotalOpenCount(targetApps: Set<String>, date: LocalDate): Int {
+        Log.d(TAG, "TOTAL_ALL mode: calculating total open count across ${targetApps.size} apps")
+        var totalCount = 0
+        targetApps.forEach { app ->
+            val appCount = usageTrackingRepository.getOpenCount(app, date)
+            totalCount += appCount
+            Log.d(TAG, "  - $app: $appCount times")
+        }
+        Log.d(TAG, "  Total count: $totalCount")
+        return totalCount
+    }
+
+    private fun buildUsageScopeId(targetApps: Set<String>): String {
+        if (targetApps.isEmpty()) return "scope:empty"
+        val canonical = targetApps.sorted().joinToString("|")
+        return "scope:${targetApps.size}:${canonical.hashCode()}"
+    }
 }
 
 /**
@@ -527,10 +478,8 @@ class BlockingEngine @Inject constructor(
 data class MergedRestriction(
     val timeRestrictions: List<TimeRestriction>,
     val usageLimit: kotlin.time.Duration?,
-    val usageLimitType: LimitType?, // 使用时长限制类型
     val openCountLimit: Int?,
-    val openCountLimitType: LimitType?, // 打开次数限制类型
-    val targetApps: Set<String>, // 目标应用列表（用于 TOTAL_ALL 模式）
+    val targetApps: Set<String>, // 目标应用列表（组内总量计算）
     val enforcementMode: EnforcementMode
 )
 

@@ -137,19 +137,15 @@ fun FocusEditScreen(
         // 使用时长限制
         UsageLimitsSection(
             limits = uiState.usageLimits,
-            selectedApps = uiState.selectedPackages,
             onUpdateLimits = { viewModel.updateUsageLimits(it) },
-            onSetTotalAll = { h, m -> viewModel.setUsageLimitsTotalAll(h, m) },
-            onSetPerApp = { h, m -> viewModel.setUsageLimitsPerApp(h, m) }
+            onSetTotalAll = { h, m -> viewModel.setUsageLimitsTotalAll(h, m) }
         )
 
         // 打开次数限制
         OpenCountLimitsSection(
             limits = uiState.openCountLimits,
-            selectedApps = uiState.selectedPackages,
             onUpdateLimits = { viewModel.updateOpenCountLimits(it) },
-            onSetTotalAll = { count -> viewModel.setOpenCountLimitsTotalAll(count) },
-            onSetPerApp = { count -> viewModel.setOpenCountLimitsPerApp(count) }
+            onSetTotalAll = { count -> viewModel.setOpenCountLimitsTotalAll(count) }
         )
 
         // 执行模式
@@ -528,10 +524,8 @@ fun TimeSelector(
 @Composable
 fun UsageLimitsSection(
     limits: UsageLimits?,
-    selectedApps: Set<String>,
     onUpdateLimits: (UsageLimits?) -> Unit,
-    onSetTotalAll: (Int, Int) -> Unit,
-    onSetPerApp: (Int, Int) -> Unit
+    onSetTotalAll: (Int, Int) -> Unit
 ) {
     var enabled by remember(limits) { mutableStateOf(limits != null) }
     var showDialog by remember { mutableStateOf(false) }
@@ -588,40 +582,23 @@ fun UsageLimitsSection(
 
             // 显示当前限制
             if (enabled && limits != null) {
+                val displayLimit = limits.effectiveLimit()
                 FocusCard(
                     modifier = Modifier.fillMaxWidth(),
                     containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.95f)
                 ) {
                     Column(modifier = Modifier.padding(12.dp)) {
-                        when (limits.type) {
-                            LimitType.TOTAL_ALL -> {
-                                Text(
-                                    text = "所有应用总时长",
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    fontWeight = FontWeight.Medium
-                                )
-                                limits.totalLimit?.let {
-                                    Text(
-                                        text = "${it.inWholeHours}小时 ${it.inWholeMinutes % 60}分钟",
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
-                                }
-                            }
-                            LimitType.PER_APP -> {
-                                Text(
-                                    text = "每个应用时长",
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    fontWeight = FontWeight.Medium
-                                )
-                                limits.perAppLimit?.let {
-                                    Text(
-                                        text = "${it.inWholeHours}小时 ${it.inWholeMinutes % 60}分钟",
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
-                                }
-                            }
+                        Text(
+                            text = "所有应用共享时长",
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.Medium
+                        )
+                        displayLimit?.let {
+                            Text(
+                                text = "${it.inWholeHours}小时 ${it.inWholeMinutes % 60}分钟",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
                         }
                     }
                 }
@@ -643,11 +620,8 @@ fun UsageLimitsSection(
                 showDialog = false
                 if (limits == null) enabled = false
             },
-            onConfirm = { type, hours, minutes ->
-                when (type) {
-                    LimitType.TOTAL_ALL -> onSetTotalAll(hours, minutes)
-                    LimitType.PER_APP -> onSetPerApp(hours, minutes)
-                }
+            onConfirm = { hours, minutes ->
+                onSetTotalAll(hours, minutes)
                 showDialog = false
             }
         )
@@ -658,32 +632,18 @@ fun UsageLimitsSection(
 fun UsageLimitsDialog(
     currentLimits: UsageLimits?,
     onDismiss: () -> Unit,
-    onConfirm: (LimitType, Int, Int) -> Unit
+    onConfirm: (Int, Int) -> Unit
 ) {
-    var selectedType by remember { mutableStateOf(currentLimits?.type ?: LimitType.TOTAL_ALL) }
-    var hours by remember { mutableStateOf(0) }
-    var minutes by remember { mutableStateOf(30) }
+    val initialMinutes = (currentLimits?.effectiveLimit()?.inWholeMinutes ?: 30L).coerceAtLeast(1L)
+    var hours by remember(currentLimits) { mutableStateOf((initialMinutes / 60).toInt()) }
+    var minutes by remember(currentLimits) { mutableStateOf((initialMinutes % 60).toInt()) }
 
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("设置使用时长限制") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
-                // 类型选择
-                Text("限制类型：", style = MaterialTheme.typography.titleSmall)
-
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    RadioButton(
-                        selected = selectedType == LimitType.TOTAL_ALL,
-                        onClick = { selectedType = LimitType.TOTAL_ALL },
-                        label = "所有应用总时长"
-                    )
-                    RadioButton(
-                        selected = selectedType == LimitType.PER_APP,
-                        onClick = { selectedType = LimitType.PER_APP },
-                        label = "每个应用相同时长"
-                    )
-                }
+                Text("限制范围：所有应用共享同一时长", style = MaterialTheme.typography.bodyMedium)
 
                 Text("时长设置：", style = MaterialTheme.typography.titleSmall)
                 Row(
@@ -709,7 +669,15 @@ fun UsageLimitsDialog(
         },
         confirmButton = {
             TextButton(
-                onClick = { onConfirm(selectedType, hours, minutes) }
+                onClick = {
+                    val safeHours = hours.coerceAtLeast(0)
+                    val safeMinutes = minutes.coerceIn(0, 59)
+                    if (safeHours == 0 && safeMinutes == 0) {
+                        onConfirm(0, 1)
+                    } else {
+                        onConfirm(safeHours, safeMinutes)
+                    }
+                }
             ) {
                 Text("确定")
             }
@@ -723,34 +691,10 @@ fun UsageLimitsDialog(
 }
 
 @Composable
-fun RadioButton(
-    selected: Boolean,
-    onClick: () -> Unit,
-    label: String
-) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable(onClick = onClick)
-            .padding(vertical = 4.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(8.dp)
-    ) {
-        androidx.compose.material3.RadioButton(
-            selected = selected,
-            onClick = onClick
-        )
-        Text(text = label)
-    }
-}
-
-@Composable
 fun OpenCountLimitsSection(
     limits: OpenCountLimits?,
-    selectedApps: Set<String>,
     onUpdateLimits: (OpenCountLimits?) -> Unit,
-    onSetTotalAll: (Int) -> Unit,
-    onSetPerApp: (Int) -> Unit
+    onSetTotalAll: (Int) -> Unit
 ) {
     var enabled by remember(limits) { mutableStateOf(limits != null) }
     var showDialog by remember { mutableStateOf(false) }
@@ -807,40 +751,23 @@ fun OpenCountLimitsSection(
 
             // 显示当前限制
             if (enabled && limits != null) {
+                val displayCount = limits.effectiveCount()
                 FocusCard(
                     modifier = Modifier.fillMaxWidth(),
                     containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.95f)
                 ) {
                     Column(modifier = Modifier.padding(12.dp)) {
-                        when (limits.type) {
-                            LimitType.TOTAL_ALL -> {
-                                Text(
-                                    text = "所有应用总次数",
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    fontWeight = FontWeight.Medium
-                                )
-                                limits.totalCount?.let {
-                                    Text(
-                                        text = "$it 次",
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
-                                }
-                            }
-                            LimitType.PER_APP -> {
-                                Text(
-                                    text = "每个应用次数",
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    fontWeight = FontWeight.Medium
-                                )
-                                limits.perAppCount?.let {
-                                    Text(
-                                        text = "$it 次",
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
-                                }
-                            }
+                        Text(
+                            text = "所有应用共享次数",
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.Medium
+                        )
+                        displayCount?.let {
+                            Text(
+                                text = "$it 次",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
                         }
                     }
                 }
@@ -862,11 +789,8 @@ fun OpenCountLimitsSection(
                 showDialog = false
                 if (limits == null) enabled = false
             },
-            onConfirm = { type, count ->
-                when (type) {
-                    LimitType.TOTAL_ALL -> onSetTotalAll(count)
-                    LimitType.PER_APP -> onSetPerApp(count)
-                }
+            onConfirm = { count ->
+                onSetTotalAll(count)
                 showDialog = false
 
             }
@@ -878,31 +802,16 @@ fun OpenCountLimitsSection(
 fun OpenCountLimitsDialog(
     currentLimits: OpenCountLimits?,
     onDismiss: () -> Unit,
-    onConfirm: (LimitType, Int) -> Unit
+    onConfirm: (Int) -> Unit
 ) {
-    var selectedType by remember { mutableStateOf(currentLimits?.type ?: LimitType.TOTAL_ALL) }
-    var count by remember { mutableStateOf(10) }
+    var count by remember(currentLimits) { mutableStateOf(currentLimits?.effectiveCount() ?: 10) }
 
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("设置打开次数限制") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
-                // 类型选择
-                Text("限制类型：", style = MaterialTheme.typography.titleSmall)
-
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    RadioButton(
-                        selected = selectedType == LimitType.TOTAL_ALL,
-                        onClick = { selectedType = LimitType.TOTAL_ALL },
-                        label = "所有应用总次数"
-                    )
-                    RadioButton(
-                        selected = selectedType == LimitType.PER_APP,
-                        onClick = { selectedType = LimitType.PER_APP },
-                        label = "每个应用相同次数"
-                    )
-                }
+                Text("限制范围：所有应用共享同一总次数", style = MaterialTheme.typography.bodyMedium)
 
                 Text("次数设置：", style = MaterialTheme.typography.titleSmall)
                 OutlinedTextField(
@@ -916,7 +825,7 @@ fun OpenCountLimitsDialog(
         },
         confirmButton = {
             TextButton(
-                onClick = { onConfirm(selectedType, count) }
+                onClick = { onConfirm(count.coerceAtLeast(1)) }
             ) {
                 Text("确定")
             }

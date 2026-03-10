@@ -24,12 +24,14 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import javax.inject.Inject
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.os.Build
 import androidx.core.app.NotificationCompat
+import com.example.umind.util.InternalLaunchTracker
 
 @AndroidEntryPoint
 class BlockAccessibilityService : AccessibilityService() {
@@ -66,7 +68,10 @@ class BlockAccessibilityService : AccessibilityService() {
 
     // Usage tracking state
     private var currentForegroundPackage: String? = null
+    private var currentTrackedPackage: String? = null
     private var currentAppStartTime: Long = 0
+    private var currentCountdownKey: String? = null
+    private val lastOpenRecordAt = mutableMapOf<String, Long>()
 
     // Performance optimization: Cache block info to reduce database queries
     private val blockInfoCache = mutableMapOf<String, Pair<com.example.umind.domain.model.BlockInfo, Long>>()
@@ -76,6 +81,12 @@ class BlockAccessibilityService : AccessibilityService() {
     private var lastBlockedPackage: String? = null
     private var lastBlockTime: Long = 0
     private val BLOCK_DIALOG_DEBOUNCE_MS = 3000L // 3 seconds debounce
+    private val OPEN_COUNT_DEBOUNCE_MS = 1500L   // 1.5 seconds debounce
+    private var lastWindowStatePackage: String? = null
+    private var lastWindowStateTime: Long = 0
+    private val WINDOW_STATE_DEBOUNCE_MS = 350L
+    private val internalLaunchAllowUntil = mutableMapOf<String, Long>()
+    private val INTERNAL_LAUNCH_GRACE_MS = 20_000L
 
     companion object {
         private const val CHANNEL_ID = "focus_usage_channel"
@@ -89,7 +100,10 @@ class BlockAccessibilityService : AccessibilityService() {
          * 例如：通知栏、快捷设置面板等
          */
         private val TRANSIENT_SYSTEM_UI = setOf(
-            "com.android.systemui"  // 通知栏、快捷设置等
+            "com.android.systemui",             // 通知栏、快捷设置等
+            "com.android.permissioncontroller", // 系统权限弹窗
+            "com.google.android.permissioncontroller",
+            "android"                           // 部分系统临时弹窗
         )
 
         /**
@@ -164,11 +178,11 @@ class BlockAccessibilityService : AccessibilityService() {
         startFocusModeNotificationMonitor()
 
         serviceInfo = serviceInfo.apply {
-            eventTypes = AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED or
-                AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED
+            // 仅监听窗口状态变化，避免 CONTENT_CHANGED 带来的高频事件风暴
+            eventTypes = AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED
             feedbackType = AccessibilityServiceInfo.FEEDBACK_GENERIC
             flags = flags or AccessibilityServiceInfo.FLAG_REPORT_VIEW_IDS
-            notificationTimeout = 50
+            notificationTimeout = 120
         }
 
         Log.d("BlockAccessibilityService", "Service connected and configured as foreground service")
@@ -307,143 +321,172 @@ class BlockAccessibilityService : AccessibilityService() {
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
-        // 添加更详细的日志
-        Log.d("BlockAccessibilityService", "=== Received event ===")
-        Log.d("BlockAccessibilityService", "Event type: ${event?.eventType}")
-        Log.d("BlockAccessibilityService", "Package: ${event?.packageName}")
-        Log.d("BlockAccessibilityService", "Class: ${event?.className}")
+        try {
+            if (event?.eventType != AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) {
+                return
+            }
 
-        if (event?.eventType != AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) {
-            Log.d("BlockAccessibilityService", "Ignoring event type: ${event?.eventType}")
-            return
-        }
+            val packageName = event.packageName?.toString() ?: run {
+                return
+            }
 
-        val packageName = event.packageName?.toString() ?: run {
-            Log.d("BlockAccessibilityService", "No package name in event")
-            return
-        }
+            val eventNow = System.currentTimeMillis()
+            if (packageName == lastWindowStatePackage &&
+                (eventNow - lastWindowStateTime) < WINDOW_STATE_DEBOUNCE_MS
+            ) {
+                return
+            }
+            lastWindowStatePackage = packageName
+            lastWindowStateTime = eventNow
 
-        // 忽略临时系统UI（如通知栏），这些不算作应用切换
-        if (packageName in TRANSIENT_SYSTEM_UI) {
-            Log.d("BlockAccessibilityService", "Ignoring transient system UI: $packageName (notification shade, etc.)")
-            return
-        }
+            // 忽略临时系统窗口（如通知栏、输入法、权限弹窗），这些不算作应用切换
+            if (isTransientSystemWindow(packageName, event.className)) {
+                return
+            }
 
-        // 处理应用切换时的倒计时暂停（在检查白名单之前）
-        // 这样即使切换到桌面或系统应用，也会暂停上一个应用的倒计时
-        if (packageName != currentForegroundPackage) {
-            currentForegroundPackage?.let { previousPackage ->
-                // 暂停上一个应用的倒计时
-                if (countdownManager.isRunning(previousPackage)) {
-                    Log.d("BlockAccessibilityService", "Pausing countdown for $previousPackage (switching to $packageName)")
-                    serviceScope.launch {
-                        countdownManager.pauseCountdown(previousPackage, serviceScope)
+            // 处理应用切换时的倒计时暂停（在检查白名单之前）
+            // 这样即使切换到桌面或系统应用，也会暂停上一个应用的倒计时
+            if (packageName != currentForegroundPackage) {
+                currentForegroundPackage?.let { previousPackage ->
+                    if (previousPackage != packageName) {
+                        internalLaunchAllowUntil.remove(previousPackage)
                     }
                 }
 
-                // 暂停通知更新（但保持通知可见）
-                notificationManager.pauseNotification(previousPackage)
+                currentCountdownKey?.let { countdownKey ->
+                    // 暂停当前应用组共享倒计时
+                    if (countdownManager.isRunning(countdownKey)) {
+                        Log.d("BlockAccessibilityService", "Pausing countdown for $countdownKey (switching to $packageName)")
+                        countdownManager.pauseCountdown(countdownKey)
+                    }
+                    // 暂停通知更新（但保持通知可见）
+                    notificationManager.pauseNotification(countdownKey)
+                }
 
-                // 记录使用时长
-                if (currentAppStartTime > 0) {
-                    val usageDuration = System.currentTimeMillis() - currentAppStartTime
-                    Log.d("BlockAccessibilityService", "App switch: $previousPackage used ${usageDuration}ms")
+                // 切换到任意其他包时，立即结束当前受管应用 session，避免时长落库滞后
+                endTrackedSessionIfNeeded(packageName)
+
+                currentForegroundPackage?.let { previousPackage ->
+                    // 记录使用时长
+                    if (currentAppStartTime > 0) {
+                        val usageDuration = System.currentTimeMillis() - currentAppStartTime
+                        Log.d("BlockAccessibilityService", "App switch: $previousPackage used ${usageDuration}ms")
+                    }
                 }
             }
-        }
 
-        // 忽略系统关键应用和 UMind 自己
-        if (isSystemWhitelistedApp(packageName)) {
-            Log.d("BlockAccessibilityService", "Ignoring whitelisted package: $packageName")
-            // 更新当前前台应用为白名单应用（这样下次切换时能正确暂停）
-            currentForegroundPackage = packageName
-            currentAppStartTime = 0
-            return
-        }
-
-        Log.d("BlockAccessibilityService", "Processing window change to: $packageName")
-
-        // 使用新的 BlockingEngine 检查是否应该被阻止
-        serviceScope.launch {
-            Log.d("BlockAccessibilityService", "=== Checking block info for: $packageName ===")
-
-            // Check cache first to reduce database queries
-            val now = System.currentTimeMillis()
-            val cachedInfo = blockInfoCache[packageName]
-            val blockInfo = if (cachedInfo != null && (now - cachedInfo.second) < BLOCK_INFO_CACHE_MS) {
-                Log.d("BlockAccessibilityService", "Using cached block info for $packageName")
-                cachedInfo.first
-            } else {
-                // 使用 BlockingEngine 获取阻止信息
-                // openedFromUMind = false，因为从无障碍服务检测到的都是外部打开
-                val info = blockingEngine.getBlockInfo(
-                    packageName = packageName,
-                    openedFromUMind = false
-                )
-                // Cache the result
-                blockInfoCache[packageName] = Pair(info, now)
-                // Clean old cache entries (keep only last 10)
-                if (blockInfoCache.size > 10) {
-                    val oldestKey = blockInfoCache.minByOrNull { it.value.second }?.key
-                    oldestKey?.let { blockInfoCache.remove(it) }
-                }
-                info
-            }
-
-            Log.d("BlockAccessibilityService", "Block info: shouldBlock=${blockInfo.shouldBlock}, reasons=${blockInfo.reasons.size}")
-            blockInfo.usageInfo?.let { info ->
-                Log.d("BlockAccessibilityService", "Usage info: remainingMinutes=${info.remainingMinutes}, remainingCount=${info.remainingCount}")
-            }
-
-            if (blockInfo.shouldBlock) {
-                Log.d("BlockAccessibilityService", "!!! BLOCKING APP: $packageName !!!")
-                Log.d("BlockAccessibilityService", "Block reasons: ${blockInfo.reasons.joinToString { it.toString() }}")
-
-                // 防抖：检查是否在短时间内已经阻止过同一个应用
-                val now = System.currentTimeMillis()
-                if (lastBlockedPackage == packageName && (now - lastBlockTime) < BLOCK_DIALOG_DEBOUNCE_MS) {
-                    Log.d("BlockAccessibilityService", "Debouncing: Already blocked $packageName recently, skipping dialog")
-                    // 仍然返回桌面，但不显示弹窗
-                    performGlobalAction(GLOBAL_ACTION_HOME)
-                    return@launch
-                }
-
-                // 更新防抖记录
-                lastBlockedPackage = packageName
-                lastBlockTime = now
-
-                // 获取应用名称
-                val appName = try {
-                    val pm = packageManager
-                    val appInfo = pm.getApplicationInfo(packageName, 0)
-                    pm.getApplicationLabel(appInfo).toString()
-                } catch (e: Exception) {
-                    packageName
-                }
-
-                // 记录阻止事件
-                blockEventRepository.recordBlockEvent(
-                    packageName = packageName,
-                    appName = appName,
-                    blockInfo = blockInfo
-                )
-
-                // 立即返回桌面，阻止应用打开
-                val homeSuccess = performGlobalAction(GLOBAL_ACTION_HOME)
-                Log.d("BlockAccessibilityService", "Home action result: $homeSuccess")
-
-                // 立即显示弹窗
-                handler.post {
-                    showBlockDialog(packageName, blockInfo)
-                }
-
-                // 更新 currentForegroundPackage 以避免重复处理
+            // 忽略系统关键应用和 UMind 自己
+            if (isSystemWhitelistedApp(packageName)) {
+                Log.d("BlockAccessibilityService", "Ignoring whitelisted package: $packageName")
+                // 更新当前前台应用为白名单应用（这样下次切换时能正确暂停）
                 currentForegroundPackage = packageName
-            } else {
-                Log.d("BlockAccessibilityService", "Not blocking $packageName, tracking app switch")
-                // 只有在不阻止的情况下才记录打开和使用
-                trackAppSwitch(packageName, blockInfo)
+                currentAppStartTime = 0
+                return
             }
+
+            Log.d("BlockAccessibilityService", "Processing window change to: $packageName")
+
+            // 使用新的 BlockingEngine 检查是否应该被阻止
+            serviceScope.launch {
+                try {
+                    Log.d("BlockAccessibilityService", "=== Checking block info for: $packageName ===")
+
+                    val consumedInternalLaunch = InternalLaunchTracker.consumeIfMatched(
+                        this@BlockAccessibilityService,
+                        packageName
+                    )
+                    if (consumedInternalLaunch) {
+                        val nowTs = System.currentTimeMillis()
+                        internalLaunchAllowUntil[packageName] = nowTs + INTERNAL_LAUNCH_GRACE_MS
+                        Log.d("BlockAccessibilityService", "Internal launch detected for $packageName")
+                    }
+                    val nowTs = System.currentTimeMillis()
+                    val openedFromUMind = consumedInternalLaunch ||
+                        ((internalLaunchAllowUntil[packageName] ?: 0L) > nowTs)
+
+                    // Check cache first to reduce database queries
+                    val now = System.currentTimeMillis()
+                    val cacheKey = "$packageName|${if (openedFromUMind) "INTERNAL" else "EXTERNAL"}"
+                    val cachedInfo = blockInfoCache[cacheKey]
+                    val blockInfo = if (cachedInfo != null && (now - cachedInfo.second) < BLOCK_INFO_CACHE_MS) {
+                        Log.d("BlockAccessibilityService", "Using cached block info for $packageName")
+                        cachedInfo.first
+                    } else {
+                        // 使用 BlockingEngine 获取阻止信息
+                        val info = blockingEngine.getBlockInfo(
+                            packageName = packageName,
+                            openedFromUMind = openedFromUMind
+                        )
+                        // Cache the result
+                        blockInfoCache[cacheKey] = Pair(info, now)
+                        // Clean old cache entries (keep only last 10)
+                        if (blockInfoCache.size > 10) {
+                            val oldestKey = blockInfoCache.minByOrNull { it.value.second }?.key
+                            oldestKey?.let { blockInfoCache.remove(it) }
+                        }
+                        info
+                    }
+
+                    Log.d("BlockAccessibilityService", "Block info: shouldBlock=${blockInfo.shouldBlock}, reasons=${blockInfo.reasons.size}")
+                    blockInfo.usageInfo?.let { info ->
+                        Log.d("BlockAccessibilityService", "Usage info: remainingMinutes=${info.remainingMinutes}, remainingCount=${info.remainingCount}")
+                    }
+
+                    if (blockInfo.shouldBlock) {
+                        Log.d("BlockAccessibilityService", "!!! BLOCKING APP: $packageName !!!")
+                        Log.d("BlockAccessibilityService", "Block reasons: ${blockInfo.reasons.joinToString { it.toString() }}")
+
+                        // 防抖：检查是否在短时间内已经阻止过同一个应用
+                        val now = System.currentTimeMillis()
+                        if (lastBlockedPackage == packageName && (now - lastBlockTime) < BLOCK_DIALOG_DEBOUNCE_MS) {
+                            Log.d("BlockAccessibilityService", "Debouncing: Already blocked $packageName recently, skipping dialog")
+                            // 仍然返回桌面，但不显示弹窗
+                            performGlobalAction(GLOBAL_ACTION_HOME)
+                            return@launch
+                        }
+
+                        // 更新防抖记录
+                        lastBlockedPackage = packageName
+                        lastBlockTime = now
+
+                        // 获取应用名称
+                        val appName = try {
+                            val pm = packageManager
+                            val appInfo = pm.getApplicationInfo(packageName, 0)
+                            pm.getApplicationLabel(appInfo).toString()
+                        } catch (e: Exception) {
+                            packageName
+                        }
+
+                        // 记录阻止事件
+                        blockEventRepository.recordBlockEvent(
+                            packageName = packageName,
+                            appName = appName,
+                            blockInfo = blockInfo
+                        )
+
+                        // 立即返回桌面，阻止应用打开
+                        val homeSuccess = performGlobalAction(GLOBAL_ACTION_HOME)
+                        Log.d("BlockAccessibilityService", "Home action result: $homeSuccess")
+
+                        // 立即显示弹窗
+                        handler.post {
+                            showBlockDialog(packageName, blockInfo)
+                        }
+
+                        // 更新 currentForegroundPackage 以避免重复处理
+                        currentForegroundPackage = packageName
+                    } else {
+                        Log.d("BlockAccessibilityService", "Not blocking $packageName, tracking app switch")
+                        // 只有在不阻止的情况下才记录打开和使用
+                        trackAppSwitch(packageName, blockInfo)
+                    }
+                } catch (e: Exception) {
+                    Log.e("BlockAccessibilityService", "Error processing accessibility event for $packageName", e)
+                }
+            }
+        } catch (e: Exception) {
+            Log.e("BlockAccessibilityService", "Fatal error in onAccessibilityEvent", e)
         }
     }
 
@@ -455,51 +498,48 @@ class BlockAccessibilityService : AccessibilityService() {
         newPackageName: String,
         blockInfo: com.example.umind.domain.model.BlockInfo
     ) {
-        val now = System.currentTimeMillis()
+        try {
+            val now = System.currentTimeMillis()
+            val previousCountdownKey = currentCountdownKey
 
-        // 检查是否是同一个应用
-        val isSameApp = currentForegroundPackage == newPackageName
+            // 检查是否是同一个应用
+            val isSameApp = currentForegroundPackage == newPackageName
 
-        // 处理上一个应用的倒计时暂停
-        if (!isSameApp) {
-            // 同步处理 session 切换，确保顺序正确
-            serviceScope.launch(Dispatchers.IO) {
-                currentForegroundPackage?.let { previousPackage ->
-                    // 结束上一个应用的 session
-                    usageTrackingRepository.endSession(previousPackage)
-                    Log.d("BlockAccessibilityService", "Ended session for $previousPackage")
-                }
-
-                // 开始新应用的 session
-                usageTrackingRepository.startSession(newPackageName)
-                Log.d("BlockAccessibilityService", "Started session for $newPackageName")
+            if (isSameApp) {
+                Log.d("BlockAccessibilityService", "Same app $newPackageName, skipping countdown restart")
+                return // 同一个应用，不需要重新启动倒计时
             }
 
-            currentForegroundPackage?.let { previousPackage ->
-                // 暂停上一个应用的倒计时
-                if (countdownManager.isRunning(previousPackage)) {
-                    Log.d("BlockAccessibilityService", "Pausing countdown for $previousPackage")
-                    countdownManager.pauseCountdown(previousPackage, serviceScope)
-                }
-
-                // 记录上一个应用的使用时长（已在 pauseCountdown 中处理）
-                if (currentAppStartTime > 0) {
-                    val usageDuration = now - currentAppStartTime
-                    Log.d("BlockAccessibilityService", "App switch: $previousPackage used ${usageDuration}ms")
-                }
-            }
-
-            // 记录新应用的打开事件（符合严格优先原则，时间和次数都要扣除）
-            usageTrackingRepository.recordAppOpen(newPackageName)
-            Log.d("BlockAccessibilityService", "Recorded app open for $newPackageName")
-
-            // 更新当前应用状态
+            // 更新当前前台应用状态
             currentForegroundPackage = newPackageName
             currentAppStartTime = now
-        } else {
-            Log.d("BlockAccessibilityService", "Same app $newPackageName, skipping countdown restart")
-            return // 同一个应用，不需要重新启动倒计时
-        }
+
+            // 非日常管理应用不进入统计，且清理任何旧通知
+            if (!blockInfo.isUnderDailyManagement) {
+                Log.d("BlockAccessibilityService", "Package $newPackageName is not under daily management, skip tracking")
+                previousCountdownKey?.let { notificationManager.cancelNotification(it) }
+                currentCountdownKey = null
+                return
+            }
+
+            // 日常管理应用：启动 session
+            withContext(Dispatchers.IO) {
+                usageTrackingRepository.startSession(newPackageName)
+            }
+            currentTrackedPackage = newPackageName
+            Log.d("BlockAccessibilityService", "Started managed session for $newPackageName")
+
+            // 打开次数去重：短时间重复窗口抖动不重复计数
+            val didRecordOpen = if (shouldRecordOpen(newPackageName, now)) {
+                withContext(Dispatchers.IO) {
+                    usageTrackingRepository.recordAppOpen(newPackageName)
+                }
+                Log.d("BlockAccessibilityService", "Recorded app open for $newPackageName")
+                true
+            } else {
+                Log.d("BlockAccessibilityService", "Skip duplicate app open for $newPackageName")
+                false
+            }
 
         // 处理新应用的倒计时和通知（只在真正切换应用时执行）
         Log.d("BlockAccessibilityService", "=== Processing notifications for $newPackageName ===")
@@ -510,12 +550,11 @@ class BlockAccessibilityService : AccessibilityService() {
             Log.d("BlockAccessibilityService", "openCountLimit: ${usageInfo.openCountLimit}")
             Log.d("BlockAccessibilityService", "remainingCount: ${usageInfo.remainingCount}")
 
-            // 计算实际显示的剩余次数
-            // 因为我们刚刚调用了 recordAppOpen()，所以需要减1
+            // 计算实际显示的剩余次数（仅当本次真的记了一次打开事件时再减 1）
             val displayRemainingCount = usageInfo.remainingCount?.let { count ->
-                (count - 1).coerceAtLeast(0)
+                if (didRecordOpen) (count - 1).coerceAtLeast(0) else count
             }
-            Log.d("BlockAccessibilityService", "displayRemainingCount: $displayRemainingCount (after recording open)")
+            Log.d("BlockAccessibilityService", "displayRemainingCount: $displayRemainingCount")
 
             // 获取应用名称
             val pm = packageManager
@@ -524,6 +563,13 @@ class BlockAccessibilityService : AccessibilityService() {
                 pm.getApplicationLabel(appInfo).toString()
             } catch (e: Exception) {
                 newPackageName
+            }
+            val countdownKey = usageInfo.usageScopeId ?: newPackageName
+            val countdownDisplayName = if (usageInfo.usageScopeId != null) "应用组" else appName
+            currentCountdownKey = countdownKey
+            if (previousCountdownKey != null && previousCountdownKey != countdownKey) {
+                // 切换到新的计时作用域时，移除旧作用域通知，避免多个通知堆叠造成“分开计时”的感知
+                notificationManager.cancelNotification(previousCountdownKey)
             }
 
             // 如果有时间限制，启动或恢复倒计时
@@ -534,26 +580,26 @@ class BlockAccessibilityService : AccessibilityService() {
                 Log.d("BlockAccessibilityService", "Time limit found: ${limitMinutes}min, used: ${usageInfo.usedMinutes}min")
 
                 // 检查是否已经有暂停的倒计时状态
-                val hasExistingCountdown = countdownManager.hasCountdown(newPackageName)
+                val hasExistingCountdown = countdownManager.hasCountdown(countdownKey)
                 Log.d("BlockAccessibilityService", "hasExistingCountdown: $hasExistingCountdown")
 
                 if (hasExistingCountdown) {
                     // 已经有倒计时状态，恢复它
-                    Log.d("BlockAccessibilityService", "=== RESUMING existing countdown for $newPackageName ===")
+                    Log.d("BlockAccessibilityService", "=== RESUMING existing countdown for $countdownKey ===")
 
                     // 获取当前剩余时间
-                    val remainingMillis = countdownManager.getRemainingMillis(newPackageName)
+                    val remainingMillis = countdownManager.getRemainingMillis(countdownKey)
                     Log.d("BlockAccessibilityService", "Remaining time from manager: ${remainingMillis}ms (${remainingMillis/1000}s)")
 
                     // 恢复倒计时管理器
-                    countdownManager.resumeCountdown(newPackageName)
+                    countdownManager.resumeCountdown(countdownKey)
                     Log.d("BlockAccessibilityService", "Countdown manager resumed")
 
                     // 启动实时倒计时通知
                     if (remainingMillis > 0) {
                         notificationManager.startCountdownNotification(
-                            packageName = newPackageName,
-                            appName = appName,
+                            packageName = countdownKey,
+                            appName = countdownDisplayName,
                             remainingMillis = remainingMillis,
                             remainingCount = displayRemainingCount,
                             scope = serviceScope
@@ -565,23 +611,22 @@ class BlockAccessibilityService : AccessibilityService() {
                 } else {
                     // 没有倒计时状态，创建新的
                     val remainingMillis = limitMillis - usedMillis
-                    Log.d("BlockAccessibilityService", "=== STARTING NEW countdown for $newPackageName ===")
+                    Log.d("BlockAccessibilityService", "=== STARTING NEW countdown for $countdownKey ===")
                     Log.d("BlockAccessibilityService", "limit=${limitMillis}ms, used=${usedMillis}ms, remaining=${remainingMillis}ms")
 
                     // 启动实时倒计时通知
                     notificationManager.startCountdownNotification(
-                        packageName = newPackageName,
-                        appName = appName,
+                        packageName = countdownKey,
+                        appName = countdownDisplayName,
                         remainingMillis = remainingMillis,
                         remainingCount = displayRemainingCount,
                         scope = serviceScope
                     )
 
                     countdownManager.startCountdown(
-                        packageName = newPackageName,
+                        key = countdownKey,
                         limitMillis = limitMillis,
                         usedMillis = usedMillis,
-                        scope = serviceScope,
                         onUpdate = { _ ->
                             // 不需要在这里更新通知，因为通知会自动实时更新
                         },
@@ -592,7 +637,7 @@ class BlockAccessibilityService : AccessibilityService() {
                             handler.post {
                                 showTimeUpDialog(newPackageName, appName)
                             }
-                            notificationManager.cancelNotification(newPackageName)
+                            notificationManager.cancelNotification(countdownKey)
                         }
                     )
                     Log.d("BlockAccessibilityService", "Countdown manager started")
@@ -604,8 +649,8 @@ class BlockAccessibilityService : AccessibilityService() {
                 if (usageInfo.remainingCount != null) {
                     Log.d("BlockAccessibilityService", "Showing count-only notification: remainingCount=${displayRemainingCount}")
                     notificationManager.showOrUpdateNotification(
-                        packageName = newPackageName,
-                        appName = appName,
+                        packageName = countdownKey,
+                        appName = countdownDisplayName,
                         remainingMillis = null,
                         remainingCount = displayRemainingCount
                     )
@@ -613,8 +658,13 @@ class BlockAccessibilityService : AccessibilityService() {
                     Log.d("BlockAccessibilityService", "No count limit either, no notification to show")
                 }
             }
-        } ?: run {
-            Log.d("BlockAccessibilityService", "No usageInfo, no notification to show")
+            } ?: run {
+                Log.d("BlockAccessibilityService", "No usageInfo, no notification to show")
+                previousCountdownKey?.let { notificationManager.cancelNotification(it) }
+                currentCountdownKey = null
+            }
+        } catch (e: Exception) {
+            Log.e("BlockAccessibilityService", "Error in trackAppSwitch for $newPackageName", e)
         }
     }
 
@@ -1024,15 +1074,69 @@ class BlockAccessibilityService : AccessibilityService() {
         return false
     }
 
+    /**
+     * 判断是否是临时系统窗口（不应视为真实应用切换）
+     */
+    private fun isTransientSystemWindow(packageName: String, className: CharSequence?): Boolean {
+        if (packageName in TRANSIENT_SYSTEM_UI) return true
+
+        val normalizedPackage = packageName.lowercase()
+        if (normalizedPackage.contains("inputmethod") || normalizedPackage.contains("keyboard")) {
+            return true
+        }
+
+        val normalizedClass = className?.toString()?.lowercase().orEmpty()
+        if (normalizedClass.contains("softinputwindow") || normalizedClass.contains("inputmethod")) {
+            return true
+        }
+
+        return false
+    }
+
+    /**
+     * 在应用切换时结束当前受管 session（如果目标包不是当前受管包）
+     */
+    private fun endTrackedSessionIfNeeded(nextPackageName: String) {
+        val trackedPackage = currentTrackedPackage ?: return
+        if (trackedPackage == nextPackageName) return
+
+        currentTrackedPackage = null
+        serviceScope.launch(Dispatchers.IO) {
+            usageTrackingRepository.endSession(trackedPackage)
+            Log.d("BlockAccessibilityService", "Ended managed session for $trackedPackage")
+        }
+    }
+
+    /**
+     * 开启次数去重，防止窗口抖动导致短时间重复计数
+     */
+    private fun shouldRecordOpen(packageName: String, now: Long): Boolean {
+        val lastTs = lastOpenRecordAt[packageName]
+        if (lastTs != null && (now - lastTs) < OPEN_COUNT_DEBOUNCE_MS) {
+            return false
+        }
+        lastOpenRecordAt[packageName] = now
+        if (lastOpenRecordAt.size > 128) {
+            val expireBefore = now - 10 * 60 * 1000L
+            val iterator = lastOpenRecordAt.entries.iterator()
+            while (iterator.hasNext()) {
+                if (iterator.next().value < expireBefore) {
+                    iterator.remove()
+                }
+            }
+        }
+        return true
+    }
+
     override fun onDestroy() {
         // 结束当前应用的 session
-        currentForegroundPackage?.let { packageName ->
+        currentTrackedPackage?.let { packageName ->
             serviceScope.launch(Dispatchers.IO) {
                 usageTrackingRepository.endSession(packageName)
             }
         }
         // 清理所有倒计时
-        countdownManager.cleanup(serviceScope)
+        countdownManager.cleanup()
         // 取消所有通知
         notificationManager.cancelAllNotifications()
         // 停止专注模式通知
@@ -1042,5 +1146,3 @@ class BlockAccessibilityService : AccessibilityService() {
         super.onDestroy()
     }
 }
-
-

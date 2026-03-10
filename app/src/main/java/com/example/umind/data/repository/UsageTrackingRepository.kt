@@ -199,6 +199,13 @@ class UsageTrackingRepository @Inject constructor(
     }
 
     /**
+     * Get usage sessions in a timestamp range
+     */
+    suspend fun getSessionsInRange(startTime: Long, endTime: Long): List<UsageSessionEntity> {
+        return usageSessionDao.getSessionsInRange(startTime, endTime)
+    }
+
+    /**
      * Start a new usage session
      */
     suspend fun startSession(packageName: String): String {

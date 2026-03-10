@@ -225,10 +225,10 @@ class FocusRepositoryImpl @Inject constructor(
                 val withinTimeRestriction = strategy.isWithinFocusTime()
 
                 // Check usage limits
-                val exceedsUsageLimit = checkUsageLimits(strategy, packageName)
+                val exceedsUsageLimit = checkUsageLimits(strategy)
 
                 // Check open count limits
-                val exceedsOpenCountLimit = checkOpenCountLimits(strategy, packageName)
+                val exceedsOpenCountLimit = checkOpenCountLimits(strategy)
 
                 // Block if within time restriction OR exceeds usage/open count limits
                 withinTimeRestriction || exceedsUsageLimit || exceedsOpenCountLimit
@@ -241,61 +241,33 @@ class FocusRepositoryImpl @Inject constructor(
     /**
      * Check if package exceeds usage limits
      */
-    private suspend fun checkUsageLimits(strategy: FocusStrategy, packageName: String): Boolean {
+    private suspend fun checkUsageLimits(strategy: FocusStrategy): Boolean {
         val usageLimits = strategy.usageLimits ?: return false
 
         // For now, assume daily limits (can be extended to weekly/monthly later)
         val today = java.time.LocalDate.now()
 
-        return when (usageLimits.type) {
-            com.example.umind.domain.model.LimitType.TOTAL_ALL -> {
-                // Check total usage for all target apps
-                val totalUsage = strategy.targetApps.sumOf { pkg ->
-                    usageTrackingRepository.getUsageDuration(pkg, today)
-                }
-                val limit = usageLimits.totalLimit ?: return false
-                totalUsage >= limit.inWholeMilliseconds
-            }
-            com.example.umind.domain.model.LimitType.PER_APP -> {
-                // Check usage for this specific app
-                val appUsage = usageTrackingRepository.getUsageDuration(packageName, today)
-                val limit = usageLimits.perAppLimit ?: return false
-                appUsage >= limit.inWholeMilliseconds
-            }
+        val limit = usageLimits.effectiveLimit() ?: return false
+        val totalUsage = strategy.targetApps.sumOf { pkg ->
+            usageTrackingRepository.getUsageDuration(pkg, today)
         }
+        return totalUsage >= limit.inWholeMilliseconds
     }
 
     /**
      * Check if package exceeds open count limits
      */
-    private suspend fun checkOpenCountLimits(strategy: FocusStrategy, packageName: String): Boolean {
+    private suspend fun checkOpenCountLimits(strategy: FocusStrategy): Boolean {
         val openCountLimits = strategy.openCountLimits ?: return false
 
         // For now, assume daily limits (can be extended to weekly/monthly later)
         val today = java.time.LocalDate.now()
 
-        return when (openCountLimits.type) {
-            com.example.umind.domain.model.LimitType.TOTAL_ALL -> {
-                // Check total open count for all target apps
-                val totalCount = strategy.targetApps.sumOf { pkg ->
-                    usageTrackingRepository.getOpenCount(pkg, today)
-                }
-                val limit = openCountLimits.totalCount ?: return false
-                totalCount >= limit
-            }
-            com.example.umind.domain.model.LimitType.PER_APP -> {
-                // Check open count for this specific app
-                val appCount = usageTrackingRepository.getOpenCount(packageName, today)
-                val limit = openCountLimits.perAppCount ?: return false
-                appCount >= limit
-            }
-            com.example.umind.domain.model.LimitType.PER_APP -> {
-                // Check open count for this specific app
-                val limit = openCountLimits.perAppCount ?: return false
-                val appCount = usageTrackingRepository.getOpenCount(packageName, today)
-                appCount >= limit
-            }
+        val limit = openCountLimits.effectiveCount() ?: return false
+        val totalCount = strategy.targetApps.sumOf { pkg ->
+            usageTrackingRepository.getOpenCount(pkg, today)
         }
+        return totalCount >= limit
     }
 
     override suspend fun getBlockInfo(packageName: String): com.example.umind.domain.model.BlockInfo {
@@ -345,69 +317,24 @@ class FocusRepositoryImpl @Inject constructor(
             android.util.Log.d("FocusRepository", "=== Checking usage limits ===")
             android.util.Log.d("FocusRepository", "usageLimits: $usageLimits")
             if (usageLimits != null) {
-                android.util.Log.d("FocusRepository", "Usage limit type: ${usageLimits.type}")
-                when (usageLimits.type) {
-                    com.example.umind.domain.model.LimitType.TOTAL_ALL -> {
-                        val totalUsage = activeStrategy.targetApps.sumOf { pkg ->
-                            usageTrackingRepository.getUsageDuration(pkg, today)
-                        }
-                        val limit = usageLimits.totalLimit
-                        if (limit != null) {
-                            val limitMs = limit.inWholeMilliseconds
-                            val usedMs = totalUsage
-                            val remainingMs = limitMs - usedMs
-
-                            usageLimitMinutes = limitMs / 60000
-                            usedMinutes = usedMs / 60000
-                            remainingMinutes = if (remainingMs > 0) remainingMs / 60000 else 0
-
-                            if (remainingMs <= 0) {
-                                reasons.add(com.example.umind.domain.model.BlockReason.UsageLimitExceeded(
-                                    limitMinutes = usageLimitMinutes!!,
-                                    usedMinutes = usedMinutes
-                                ))
-                            }
-                        }
+                val limit = usageLimits.effectiveLimit()
+                if (limit != null) {
+                    val totalUsage = activeStrategy.targetApps.sumOf { pkg ->
+                        usageTrackingRepository.getUsageDuration(pkg, today)
                     }
-                    com.example.umind.domain.model.LimitType.PER_APP -> {
-                        val appUsage = usageTrackingRepository.getUsageDuration(packageName, today)
-                        val limit = usageLimits.perAppLimit
-                        if (limit != null) {
-                            val limitMs = limit.inWholeMilliseconds
-                            val usedMs = appUsage
-                            val remainingMs = limitMs - usedMs
+                    val limitMs = limit.inWholeMilliseconds
+                    val usedMs = totalUsage
+                    val remainingMs = limitMs - usedMs
 
-                            usageLimitMinutes = limitMs / 60000
-                            usedMinutes = usedMs / 60000
-                            remainingMinutes = if (remainingMs > 0) remainingMs / 60000 else 0
+                    usageLimitMinutes = limitMs / 60000
+                    usedMinutes = usedMs / 60000
+                    remainingMinutes = if (remainingMs > 0) remainingMs / 60000 else 0
 
-                            if (remainingMs <= 0) {
-                                reasons.add(com.example.umind.domain.model.BlockReason.UsageLimitExceeded(
-                                    limitMinutes = usageLimitMinutes!!,
-                                    usedMinutes = usedMinutes
-                                ))
-                            }
-                        }
-                    }
-                    com.example.umind.domain.model.LimitType.PER_APP -> {
-                        val perAppLimit = usageLimits.perAppLimit
-                        if (perAppLimit != null) {
-                            val appUsage = usageTrackingRepository.getUsageDuration(packageName, today)
-                            val limitMs = perAppLimit.inWholeMilliseconds
-                            val usedMs = appUsage
-                            val remainingMs = limitMs - usedMs
-
-                            usageLimitMinutes = limitMs / 60000
-                            usedMinutes = usedMs / 60000
-                            remainingMinutes = if (remainingMs > 0) remainingMs / 60000 else 0
-
-                            if (remainingMs <= 0) {
-                                reasons.add(com.example.umind.domain.model.BlockReason.UsageLimitExceeded(
-                                    limitMinutes = usageLimitMinutes!!,
-                                    usedMinutes = usedMinutes
-                                ))
-                            }
-                        }
+                    if (remainingMs <= 0) {
+                        reasons.add(com.example.umind.domain.model.BlockReason.UsageLimitExceeded(
+                            limitMinutes = usageLimitMinutes!!,
+                            usedMinutes = usedMinutes
+                        ))
                     }
                 }
             }
@@ -416,76 +343,36 @@ class FocusRepositoryImpl @Inject constructor(
             val openCountLimits = activeStrategy.openCountLimits
             if (openCountLimits != null) {
                 android.util.Log.d("FocusRepository", "=== Checking open count limits for $packageName ===")
-                android.util.Log.d("FocusRepository", "Limit type: ${openCountLimits.type}")
                 android.util.Log.d("FocusRepository", "Target apps: ${activeStrategy.targetApps}")
-                when (openCountLimits.type) {
-                    com.example.umind.domain.model.LimitType.TOTAL_ALL -> {
-                        // Optimized: Batch query all apps at once instead of one by one
-                        val allCounts = mutableMapOf<String, Int>()
-                        activeStrategy.targetApps.forEach { pkg ->
-                            allCounts[pkg] = usageTrackingRepository.getOpenCount(pkg, today)
-                        }
-                        val totalCount = allCounts.values.sum()
-
-                        val limit = openCountLimits.totalCount
-                        android.util.Log.d("FocusRepository", "Total open count: $totalCount, limit: $limit")
-                        if (limit != null) {
-                            openCountLimit = limit
-                            openCount = totalCount
-                            remainingCount = if (limit > totalCount) limit - totalCount else 0
-
-                            android.util.Log.d("FocusRepository", "Calculated: openCountLimit=$openCountLimit, openCount=$openCount, remainingCount=$remainingCount")
-
-                            if (totalCount >= limit) {
-                                android.util.Log.d("FocusRepository", "!!! BLOCKING: Total count $totalCount >= limit $limit !!!")
-                                reasons.add(com.example.umind.domain.model.BlockReason.OpenCountLimitExceeded(
-                                    limitCount = limit,
-                                    usedCount = totalCount
-                                ))
-                            } else {
-                                android.util.Log.d("FocusRepository", "NOT BLOCKING: Total count $totalCount < limit $limit, remaining: $remainingCount")
-                            }
-                        }
+                val limit = openCountLimits.effectiveCount()
+                if (limit != null) {
+                    val allCounts = mutableMapOf<String, Int>()
+                    activeStrategy.targetApps.forEach { pkg ->
+                        allCounts[pkg] = usageTrackingRepository.getOpenCount(pkg, today)
                     }
-                    com.example.umind.domain.model.LimitType.PER_APP -> {
-                        val appCount = usageTrackingRepository.getOpenCount(packageName, today)
-                        val limit = openCountLimits.perAppCount
-                        android.util.Log.d("FocusRepository", "App $packageName open count: $appCount, limit: $limit")
-                        if (limit != null) {
-                            openCountLimit = limit
-                            openCount = appCount
-                            remainingCount = if (limit > appCount) limit - appCount else 0
+                    val totalCount = allCounts.values.sum()
 
-                            if (appCount >= limit) {
-                                android.util.Log.d("FocusRepository", "BLOCKING: App count $appCount >= limit $limit")
-                                reasons.add(com.example.umind.domain.model.BlockReason.OpenCountLimitExceeded(
-                                    limitCount = limit,
-                                    usedCount = appCount
-                                ))
-                            } else {
-                                android.util.Log.d("FocusRepository", "NOT BLOCKING: App count $appCount < limit $limit, remaining: $remainingCount")
-                            }
-                        }
-                    }
-                    com.example.umind.domain.model.LimitType.PER_APP -> {
-                        val perAppLimit = openCountLimits.perAppCount
-                        if (perAppLimit != null) {
-                            val appCount = usageTrackingRepository.getOpenCount(packageName, today)
-                            android.util.Log.d("FocusRepository", "App $packageName per-app open count: $appCount, limit: $perAppLimit")
-                            openCountLimit = perAppLimit
-                            openCount = appCount
-                            remainingCount = if (perAppLimit > appCount) perAppLimit - appCount else 0
+                    android.util.Log.d("FocusRepository", "Total open count: $totalCount, limit: $limit")
+                    openCountLimit = limit
+                    openCount = totalCount
+                    remainingCount = if (limit > totalCount) limit - totalCount else 0
 
-                            if (appCount >= perAppLimit) {
-                                android.util.Log.d("FocusRepository", "BLOCKING: App count $appCount >= limit $perAppLimit")
-                                reasons.add(com.example.umind.domain.model.BlockReason.OpenCountLimitExceeded(
-                                    limitCount = perAppLimit,
-                                    usedCount = appCount
-                                ))
-                            } else {
-                                android.util.Log.d("FocusRepository", "NOT BLOCKING: App count $appCount < limit $perAppLimit, remaining: $remainingCount")
-                            }
-                        }
+                    android.util.Log.d(
+                        "FocusRepository",
+                        "Calculated: openCountLimit=$openCountLimit, openCount=$openCount, remainingCount=$remainingCount"
+                    )
+
+                    if (totalCount >= limit) {
+                        android.util.Log.d("FocusRepository", "!!! BLOCKING: Total count $totalCount >= limit $limit !!!")
+                        reasons.add(com.example.umind.domain.model.BlockReason.OpenCountLimitExceeded(
+                            limitCount = limit,
+                            usedCount = totalCount
+                        ))
+                    } else {
+                        android.util.Log.d(
+                            "FocusRepository",
+                            "NOT BLOCKING: Total count $totalCount < limit $limit, remaining: $remainingCount"
+                        )
                     }
                 }
             }
